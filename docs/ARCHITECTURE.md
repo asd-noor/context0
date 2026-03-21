@@ -56,6 +56,9 @@ context0/
 │   ├── scanner/                # Tree-sitter AST scanner
 │   │   ├── queries.go          # S-expression queries per language
 │   │   └── scanner.go          # Directory walker -> graph nodes
+│   ├── treesittertempl/        # Custom tree-sitter-templ binding (includes external scanner)
+│   │   ├── templ.go            # CGo binding for tree-sitter-templ grammar
+│   │   └── src/                # Vendored C source (parser.c, scanner.c, tree_sitter/)
 │   ├── lsp/                    # LSP client
 │   │   ├── types.go            # JSON-RPC + LSP message types
 │   │   ├── transport.go        # Content-Length framing (read/write)
@@ -193,9 +196,11 @@ Status transitions: Idle -> InProgress -> Ready | Failed
 
 The scanner walks the project directory, parses each supported file with Tree-sitter, and runs language-specific S-expression queries to extract symbol nodes.
 
-Supported languages: Go, Python, JavaScript, TypeScript, Lua, Zig.
+Supported languages: Go, Python, JavaScript, TypeScript, Lua, Zig, Templ.
 
 Skipped: `vendor/`, `node_modules/`, `__pycache__/`, `.git/`, `.venv/`, `zig-cache/`, `zig-out/`, generated files. Respects `.gitignore`.
+
+Templ uses a custom internal binding (`internal/treesittertempl/`) that includes both the parser and external scanner from `vrischmann/tree-sitter-templ`. The upstream Go binding omits the external scanner, so we vendor the C sources and compile them directly. Generated `_templ.go` files are excluded from scanning.
 
 ### LSP enrichment
 
@@ -220,7 +225,7 @@ Binaries are resolved in order: **PATH** -> **cache** (`~/.context0/bin/`) -> **
 
 After resolution, a background goroutine checks for a newer version via the upstream registry (GitHub releases, npm, pip, Go module proxy) and silently reinstalls if one is found. Checked once per binary per process lifetime via `sync.Map`.
 
-Supported servers: `gopls`, `pylsp`, `typescript-language-server`, `lua-language-server`, `zls`.
+Supported servers: `gopls`, `pylsp`, `typescript-language-server`, `lua-language-server`, `zls`, `templ`.
 
 ### Watcher and daemon
 

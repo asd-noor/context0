@@ -256,6 +256,7 @@ Only use this if the daemon cannot be started or the index is corrupt. The daemo
 | TypeScript | `.ts`, `.tsx` | function, method, class, interface, type | typescript-language-server |
 | Lua | `.lua` | function, method | lua-language-server |
 | Zig | `.zig` | function | zls |
+| Templ | `.templ` | function (components, css, scripts) | templ |
 
 ### Skipped paths
 

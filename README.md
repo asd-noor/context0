@@ -6,7 +6,7 @@ A persistent knowledge layer for AI coding agents. Context0 gives agents long-te
 
 - **Memory** -- Save and retrieve project knowledge using hybrid search (keyword + vector). AI agents store decisions, architecture notes, bug fixes, and context that persists across sessions.
 - **Agenda** -- Structured task plans with acceptance criteria, optional tasks, and automatic completion tracking. Agents create plans, work through tasks, and verify done-conditions before marking them complete.
-- **Code Exploration** -- A semantic code graph built from Tree-sitter AST parsing and LSP cross-references. Agents look up symbol definitions, list file symbols, and analyze change impact before modifying code.
+- **Code Exploration** -- A semantic code graph built from Tree-sitter AST parsing and LSP cross-references. Agents look up symbol definitions, list file symbols, and analyze change impact before modifying code. Supports Go, Python, JavaScript, TypeScript, Lua, Zig, and Templ.
 
 ## Quick start
 

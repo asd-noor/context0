@@ -44,18 +44,20 @@ var languageServers = []langServer{
 	{langID: "typescript", binary: "typescript-language-server", args: []string{"--stdio"}},
 	{langID: "lua", binary: "lua-language-server", args: []string{"--stdio"}},
 	{langID: "zig", binary: "zls", args: nil},
+	{langID: "templ", binary: "templ", args: []string{"lsp"}},
 }
 
 // extToLangID maps file extensions to language IDs.
 var extToLangID = map[string]string{
-	".go":  "go",
-	".py":  "python",
-	".js":  "javascript",
-	".jsx": "javascript",
-	".ts":  "typescript",
-	".tsx": "typescript",
-	".lua": "lua",
-	".zig": "zig",
+	".go":    "go",
+	".py":    "python",
+	".js":    "javascript",
+	".jsx":   "javascript",
+	".ts":    "typescript",
+	".tsx":   "typescript",
+	".lua":   "lua",
+	".zig":   "zig",
+	".templ": "templ",
 }
 
 // Client is a persistent LSP subprocess client for one language server.

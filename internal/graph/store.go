@@ -5,12 +5,18 @@ package graph
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"os"
 
 	_ "github.com/mattn/go-sqlite3"
 
 	dbutil "context0/internal/db"
 )
+
+// ErrNotIndexed is returned by OpenReadOnly when no index database exists yet
+// for the project. Callers should instruct the user to run `ctx0 codemap index`.
+var ErrNotIndexed = errors.New("project has not been indexed yet — run: ctx0 codemap index")
 
 const schema = `
 PRAGMA journal_mode=WAL;
@@ -67,6 +73,26 @@ func Open(projectPath string) (*Store, error) {
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("graph: apply schema: %w", err)
+	}
+
+	return &Store{db: db}, nil
+}
+
+// OpenReadOnly opens an existing codemap database in read-only mode.
+// If the database file does not exist it returns ErrNotIndexed.
+func OpenReadOnly(projectPath string) (*Store, error) {
+	dbPath, err := dbutil.DBPath(projectPath, "codemap.sqlite")
+	if err != nil {
+		return nil, fmt.Errorf("graph: resolve db path: %w", err)
+	}
+
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		return nil, ErrNotIndexed
+	}
+
+	db, err := sql.Open("sqlite3", dbPath+"?mode=ro&_foreign_keys=on&_journal_mode=WAL")
+	if err != nil {
+		return nil, fmt.Errorf("graph: open db: %w", err)
 	}
 
 	return &Store{db: db}, nil

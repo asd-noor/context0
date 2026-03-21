@@ -21,6 +21,9 @@ import (
 const (
 	debounceDelay = 500 * time.Millisecond
 	pollInterval  = 100 * time.Millisecond
+	// IdleTimeout is the duration of inactivity after which the watcher stops
+	// itself by cancelling the context via the cancel func passed to Run.
+	IdleTimeout = 5 * time.Minute
 )
 
 // skipDirs is the set of directory names the watcher never descends into.
@@ -94,15 +97,26 @@ func (w *Watcher) addTree(root string) error {
 	})
 }
 
-// Run starts the event loop. It blocks until ctx is done.
-func (w *Watcher) Run(ctx context.Context) {
+// Run starts the event loop. It blocks until ctx is done or the idle timeout
+// elapses. cancel is the CancelFunc for ctx; Run calls it when the idle timer
+// fires so that the parent can detect the shutdown cleanly.
+func (w *Watcher) Run(ctx context.Context, cancel context.CancelFunc) {
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
+
+	idle := time.NewTimer(IdleTimeout)
+	defer idle.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			w.inner.Close()
+			return
+
+		case <-idle.C:
+			// No file activity for IdleTimeout — self-terminate.
+			w.inner.Close()
+			cancel()
 			return
 
 		case event, ok := <-w.inner.Events:
@@ -115,7 +129,16 @@ func (w *Watcher) Run(ctx context.Context) {
 			// Ignore watcher errors.
 
 		case <-ticker.C:
-			w.flush(ctx)
+			if w.flush(ctx) {
+				// Activity detected — reset the idle timer.
+				if !idle.Stop() {
+					select {
+					case <-idle.C:
+					default:
+					}
+				}
+				idle.Reset(IdleTimeout)
+			}
 		}
 	}
 }
@@ -151,7 +174,8 @@ func (w *Watcher) handleEvent(ctx context.Context, event fsnotify.Event) {
 }
 
 // flush processes all pending files whose debounce deadline has passed.
-func (w *Watcher) flush(ctx context.Context) {
+// It returns true if at least one file was processed (activity occurred).
+func (w *Watcher) flush(ctx context.Context) bool {
 	now := time.Now()
 	w.mu.Lock()
 	var ready []string
@@ -183,6 +207,7 @@ func (w *Watcher) flush(ctx context.Context) {
 		}
 		w.reindexFile(ctx, path)
 	}
+	return len(ready) > 0
 }
 
 // reindexFile performs the full re-index sequence for a single modified file:

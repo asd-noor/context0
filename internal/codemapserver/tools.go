@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -84,7 +83,7 @@ func registerGetSymbolsInFile(s *server.MCPServer, srv *Server) {
 			return toolError(fmt.Errorf("file_path is required")), nil
 		}
 		// Resolve to absolute path.
-		absPath, err := absFilePath(filePath)
+		absPath, err := AbsFilePath(filePath)
 		if err != nil {
 			return toolError(err), nil
 		}
@@ -104,9 +103,6 @@ func registerGetSymbol(s *server.MCPServer, srv *Server) {
 		mcpgo.WithString("symbol_name", mcpgo.Description("Symbol name to look up"), mcpgo.Required()),
 		mcpgo.WithBoolean("with_source", mcpgo.Description("Include the source code lines for each match")),
 	), func(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
-		if err := srv.WaitForIndex(ctx); err != nil {
-			return toolError(err), nil
-		}
 		name := req.GetString("symbol_name", "")
 		if name == "" {
 			return toolError(fmt.Errorf("symbol_name is required")), nil
@@ -115,38 +111,9 @@ func registerGetSymbol(s *server.MCPServer, srv *Server) {
 		if v, ok := req.GetArguments()["with_source"]; ok && v != nil {
 			withSource, _ = v.(bool)
 		}
-
-		nodes, err := srv.store.GetSymbolLocation(ctx, name)
+		results, err := srv.GetSymbolWithSource(ctx, name, withSource)
 		if err != nil {
 			return toolError(err), nil
-		}
-
-		if !withSource {
-			return toolJSON(nodes), nil
-		}
-
-		// Attach source snippets.
-		type nodeWithSource struct {
-			ID        string `json:"id"`
-			Name      string `json:"name"`
-			Kind      string `json:"kind"`
-			FilePath  string `json:"file_path"`
-			LineStart int    `json:"line_start"`
-			LineEnd   int    `json:"line_end"`
-			ColStart  int    `json:"col_start"`
-			ColEnd    int    `json:"col_end"`
-			SymbolURI string `json:"symbol_uri,omitempty"`
-			Source    string `json:"source,omitempty"`
-		}
-		var results []nodeWithSource
-		for _, n := range nodes {
-			nws := nodeWithSource{
-				ID: n.ID, Name: n.Name, Kind: n.Kind,
-				FilePath: n.FilePath, LineStart: n.LineStart, LineEnd: n.LineEnd,
-				ColStart: n.ColStart, ColEnd: n.ColEnd, SymbolURI: n.SymbolURI,
-			}
-			nws.Source = readLines(n.FilePath, n.LineStart, n.LineEnd)
-			results = append(results, nws)
 		}
 		return toolJSON(results), nil
 	})
@@ -186,55 +153,4 @@ func toolJSON(v any) *mcpgo.CallToolResult {
 		return toolError(err)
 	}
 	return mcpgo.NewToolResultText(string(b))
-}
-
-// absFilePath resolves path to an absolute path, using cwd as the base.
-func absFilePath(path string) (string, error) {
-	if len(path) > 0 && path[0] == '/' {
-		return path, nil
-	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	return cwd + "/" + path, nil
-}
-
-// readLines reads lines [start, end] (1-indexed) from path.
-func readLines(path string, start, end int) string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	lines := splitLines(data)
-	if start < 1 {
-		start = 1
-	}
-	if end > len(lines) {
-		end = len(lines)
-	}
-	if start > end {
-		return ""
-	}
-	result := ""
-	for i := start - 1; i < end; i++ {
-		result += lines[i] + "\n"
-	}
-	return result
-}
-
-// splitLines splits data into lines without allocating a full strings.Split.
-func splitLines(data []byte) []string {
-	var lines []string
-	start := 0
-	for i, b := range data {
-		if b == '\n' {
-			lines = append(lines, string(data[start:i]))
-			start = i + 1
-		}
-	}
-	if start < len(data) {
-		lines = append(lines, string(data[start:]))
-	}
-	return lines
 }

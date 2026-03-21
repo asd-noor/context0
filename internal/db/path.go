@@ -43,3 +43,8 @@ func DBPath(projectPath, dbName string) (string, error) {
 	}
 	return filepath.Join(dir, dbName), nil
 }
+
+// PIDPath returns the path to the codemap daemon PID file for projectPath.
+func PIDPath(projectPath string) (string, error) {
+	return DBPath(projectPath, "codemap.pid")
+}

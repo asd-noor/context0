@@ -59,8 +59,23 @@ type Server struct {
 }
 
 // New creates and starts a Server for the given project root. The initial
-// index begins immediately in a background goroutine.
+// index begins immediately in a background goroutine. The file watcher runs
+// until ctx is cancelled; idle-timeout events from the watcher are suppressed
+// (a no-op cancel is used) because the MCP server process lifetime governs
+// shutdown.
 func New(ctx context.Context, rootDir string) (*Server, error) {
+	return newServer(ctx, rootDir, func() {})
+}
+
+// NewWatch is like New but passes cancel to the watcher so that the watcher's
+// idle-timeout fires cancel(), unblocking the caller's <-ctx.Done().
+// Use this when running ctx0 codemap --watch <dir>.
+func NewWatch(ctx context.Context, cancel context.CancelFunc, rootDir string) (*Server, error) {
+	return newServer(ctx, rootDir, cancel)
+}
+
+// newServer is the shared constructor used by New and NewWatch.
+func newServer(ctx context.Context, rootDir string, cancel context.CancelFunc) (*Server, error) {
 	absRoot := util.FindGitRoot(rootDir)
 
 	store, err := graph.Open(absRoot)
@@ -90,7 +105,7 @@ func New(ctx context.Context, rootDir string) (*Server, error) {
 		if err != nil {
 			return
 		}
-		w.Run(ctx)
+		w.Run(ctx, cancel)
 	}()
 
 	return srv, nil

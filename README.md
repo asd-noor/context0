@@ -50,3 +50,7 @@ Go, SQLite (FTS5 + sqlite-vec), Tree-sitter, LSP, Ollama, cobra.
 ## Data storage
 
 All data lives in `~/.context0/<project-path>/` as SQLite files -- no external services except Ollama for embeddings (memory engine only).
+
+## License
+
+[GPL-3.0](LICENSE)

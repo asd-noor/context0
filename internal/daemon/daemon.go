@@ -44,10 +44,10 @@ func IsAlive(pidPath string) bool {
 	return err == nil
 }
 
-// Spawn launches `ctx0 codemap --project <projectRoot> watch` as a detached
+// Spawn launches `context0 codemap --project <projectRoot> watch` as a detached
 // background process. The child inherits no file descriptors (stdin/stdout/stderr
 // are all /dev/null) and is placed in its own process group so it outlives the
-// caller. exe is the path to the ctx0 binary (os.Executable() from the caller).
+// caller. exe is the path to the context0 binary (os.Executable() from the caller).
 func Spawn(exe, projectRoot string) error {
 	cmd := exec.Command(exe, "codemap", "--project", projectRoot, "watch")
 	cmd.Stdin = nil

@@ -1,4 +1,4 @@
-// Package agenda provides the `ctx0 agenda` CLI sub-commands.
+// Package agenda provides the `context0 agenda` CLI sub-commands.
 package agenda
 
 import (
@@ -15,35 +15,27 @@ import (
 )
 
 // NewCmd returns the `agenda` sub-command tree.
-func NewCmd() *cobra.Command {
+func NewCmd(projectDir *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "agenda",
 		Short: "Manage project agendas (plans / todo lists)",
 	}
 
 	cmd.AddCommand(
-		newCreateCmd(),
-		newListCmd(),
-		newGetCmd(),
-		newSearchCmd(),
-		newTaskCmd(),
-		newUpdateCmd(),
-		newDeleteCmd(),
+		newCreateCmd(projectDir),
+		newListCmd(projectDir),
+		newGetCmd(projectDir),
+		newSearchCmd(projectDir),
+		newTaskCmd(projectDir),
+		newUpdateCmd(projectDir),
+		newDeleteCmd(projectDir),
 	)
 	return cmd
 }
 
-func projectPath() string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "."
-	}
-	return cwd
-}
-
 // --- create ---
 
-func newCreateCmd() *cobra.Command {
+func newCreateCmd(projectDir *string) *cobra.Command {
 	var title, description string
 	var taskDetails []string
 	var taskOptional []bool
@@ -52,7 +44,7 @@ func newCreateCmd() *cobra.Command {
 		Use:   "create",
 		Short: "Create a new agenda with tasks",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			eng, err := agenda.New(projectPath())
+			eng, err := agenda.New(*projectDir)
 			if err != nil {
 				return err
 			}
@@ -84,14 +76,14 @@ func newCreateCmd() *cobra.Command {
 
 // --- list ---
 
-func newListCmd() *cobra.Command {
+func newListCmd(projectDir *string) *cobra.Command {
 	var all bool
 
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List agendas",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			eng, err := agenda.New(projectPath())
+			eng, err := agenda.New(*projectDir)
 			if err != nil {
 				return err
 			}
@@ -130,7 +122,7 @@ func newListCmd() *cobra.Command {
 
 // --- get ---
 
-func newGetCmd() *cobra.Command {
+func newGetCmd(projectDir *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "get <id>",
 		Short: "Show full agenda with tasks",
@@ -141,7 +133,7 @@ func newGetCmd() *cobra.Command {
 				return fmt.Errorf("invalid id: %w", err)
 			}
 
-			eng, err := agenda.New(projectPath())
+			eng, err := agenda.New(*projectDir)
 			if err != nil {
 				return err
 			}
@@ -182,7 +174,7 @@ func newGetCmd() *cobra.Command {
 
 // --- search ---
 
-func newSearchCmd() *cobra.Command {
+func newSearchCmd(projectDir *string) *cobra.Command {
 	var limit int
 
 	cmd := &cobra.Command{
@@ -190,7 +182,7 @@ func newSearchCmd() *cobra.Command {
 		Short: "Search agendas by title/description",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			eng, err := agenda.New(projectPath())
+			eng, err := agenda.New(*projectDir)
 			if err != nil {
 				return err
 			}
@@ -229,41 +221,41 @@ func newSearchCmd() *cobra.Command {
 
 // --- task ---
 
-func newTaskCmd() *cobra.Command {
+func newTaskCmd(projectDir *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "task",
 		Short: "Manage individual tasks",
 	}
-	cmd.AddCommand(newTaskDoneCmd(), newTaskReopenCmd())
+	cmd.AddCommand(newTaskDoneCmd(projectDir), newTaskReopenCmd(projectDir))
 	return cmd
 }
 
-func newTaskDoneCmd() *cobra.Command {
+func newTaskDoneCmd(projectDir *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "done <task-id>",
 		Short: "Mark a task as completed",
 		Args:  cobra.ExactArgs(1),
-		RunE:  taskStateCmd(true),
+		RunE:  taskStateCmd(projectDir, true),
 	}
 }
 
-func newTaskReopenCmd() *cobra.Command {
+func newTaskReopenCmd(projectDir *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "reopen <task-id>",
 		Short: "Mark a task as pending",
 		Args:  cobra.ExactArgs(1),
-		RunE:  taskStateCmd(false),
+		RunE:  taskStateCmd(projectDir, false),
 	}
 }
 
-func taskStateCmd(done bool) func(cmd *cobra.Command, args []string) error {
+func taskStateCmd(projectDir *string, done bool) func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		id, err := strconv.ParseInt(args[0], 10, 64)
 		if err != nil {
 			return fmt.Errorf("invalid task id: %w", err)
 		}
 
-		eng, err := agenda.New(projectPath())
+		eng, err := agenda.New(*projectDir)
 		if err != nil {
 			return err
 		}
@@ -283,7 +275,7 @@ func taskStateCmd(done bool) func(cmd *cobra.Command, args []string) error {
 
 // --- update ---
 
-func newUpdateCmd() *cobra.Command {
+func newUpdateCmd(projectDir *string) *cobra.Command {
 	var title, description, newTasksJSON string
 	var deactivate bool
 
@@ -297,7 +289,7 @@ func newUpdateCmd() *cobra.Command {
 				return fmt.Errorf("invalid id: %w", err)
 			}
 
-			eng, err := agenda.New(projectPath())
+			eng, err := agenda.New(*projectDir)
 			if err != nil {
 				return err
 			}
@@ -333,7 +325,7 @@ func newUpdateCmd() *cobra.Command {
 
 // --- delete ---
 
-func newDeleteCmd() *cobra.Command {
+func newDeleteCmd(projectDir *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "delete <id>",
 		Short: "Delete an inactive agenda",
@@ -344,7 +336,7 @@ func newDeleteCmd() *cobra.Command {
 				return fmt.Errorf("invalid id: %w", err)
 			}
 
-			eng, err := agenda.New(projectPath())
+			eng, err := agenda.New(*projectDir)
 			if err != nil {
 				return err
 			}

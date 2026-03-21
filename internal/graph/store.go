@@ -15,8 +15,8 @@ import (
 )
 
 // ErrNotIndexed is returned by OpenReadOnly when no index database exists yet
-// for the project. Callers should instruct the user to run `ctx0 codemap index`.
-var ErrNotIndexed = errors.New("project has not been indexed yet — run: ctx0 codemap index")
+// for the project. Callers should instruct the user to run `context0 codemap index`.
+var ErrNotIndexed = errors.New("project has not been indexed yet — run: context0 codemap index")
 
 const schema = `
 PRAGMA journal_mode=WAL;

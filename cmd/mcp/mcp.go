@@ -1,4 +1,4 @@
-// Package mcp provides the `ctx0 mcp` command which runs a stdio MCP server
+// Package mcp provides the `context0 mcp` command which runs a stdio MCP server
 // exposing Memory and Agenda tools.
 package mcp
 
@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strconv"
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
@@ -18,40 +17,32 @@ import (
 )
 
 // NewCmd returns the `mcp` sub-command that starts the stdio MCP server.
-func NewCmd() *cobra.Command {
+func NewCmd(projectDir *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "mcp",
 		Short: "Start the MCP stdio server (Memory + Agenda tools)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runMCPServer()
+			return runMCPServer(*projectDir)
 		},
 	}
 }
 
-func projectPath() string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "."
-	}
-	return cwd
-}
-
-func runMCPServer() error {
+func runMCPServer(projectDir string) error {
 	s := server.NewMCPServer(
 		"context0",
 		"0.1.0",
 		server.WithToolCapabilities(true),
 	)
 
-	registerMemoryTools(s)
-	registerAgendaTools(s)
+	registerMemoryTools(s, projectDir)
+	registerAgendaTools(s, projectDir)
 
 	return server.ServeStdio(s)
 }
 
 // --- Memory tools ---
 
-func registerMemoryTools(s *server.MCPServer) {
+func registerMemoryTools(s *server.MCPServer, projectDir string) {
 	// save_memory
 	s.AddTool(mcpgo.NewTool("save_memory",
 		mcpgo.WithDescription("Persist a memory (category, topic, content)"),
@@ -63,7 +54,7 @@ func registerMemoryTools(s *server.MCPServer) {
 		topic := req.GetString("topic", "")
 		content := req.GetString("content", "")
 
-		eng, err := memory.New(projectPath())
+		eng, err := memory.New(projectDir)
 		if err != nil {
 			return mcpError(err), nil
 		}
@@ -88,7 +79,7 @@ func registerMemoryTools(s *server.MCPServer) {
 			topK = int(v.(float64))
 		}
 
-		eng, err := memory.New(projectPath())
+		eng, err := memory.New(projectDir)
 		if err != nil {
 			return mcpError(err), nil
 		}
@@ -116,7 +107,7 @@ func registerMemoryTools(s *server.MCPServer) {
 		topic := req.GetString("topic", "")
 		content := req.GetString("content", "")
 
-		eng, err := memory.New(projectPath())
+		eng, err := memory.New(projectDir)
 		if err != nil {
 			return mcpError(err), nil
 		}
@@ -138,7 +129,7 @@ func registerMemoryTools(s *server.MCPServer) {
 		idF, _ := args["id"].(float64)
 		id := int64(idF)
 
-		eng, err := memory.New(projectPath())
+		eng, err := memory.New(projectDir)
 		if err != nil {
 			return mcpError(err), nil
 		}
@@ -153,7 +144,7 @@ func registerMemoryTools(s *server.MCPServer) {
 
 // --- Agenda tools ---
 
-func registerAgendaTools(s *server.MCPServer) {
+func registerAgendaTools(s *server.MCPServer, projectDir string) {
 	// create_agenda
 	s.AddTool(mcpgo.NewTool("create_agenda",
 		mcpgo.WithDescription("Create a new plan with tasks"),
@@ -172,7 +163,7 @@ func registerAgendaTools(s *server.MCPServer) {
 			}
 		}
 
-		eng, err := agenda.New(projectPath())
+		eng, err := agenda.New(projectDir)
 		if err != nil {
 			return mcpError(err), nil
 		}
@@ -195,7 +186,7 @@ func registerAgendaTools(s *server.MCPServer) {
 			activeOnly, _ = v.(bool)
 		}
 
-		eng, err := agenda.New(projectPath())
+		eng, err := agenda.New(projectDir)
 		if err != nil {
 			return mcpError(err), nil
 		}
@@ -216,7 +207,7 @@ func registerAgendaTools(s *server.MCPServer) {
 		idF, _ := req.GetArguments()["agenda_id"].(float64)
 		id := int64(idF)
 
-		eng, err := agenda.New(projectPath())
+		eng, err := agenda.New(projectDir)
 		if err != nil {
 			return mcpError(err), nil
 		}
@@ -241,7 +232,7 @@ func registerAgendaTools(s *server.MCPServer) {
 			limit = int(v.(float64))
 		}
 
-		eng, err := agenda.New(projectPath())
+		eng, err := agenda.New(projectDir)
 		if err != nil {
 			return mcpError(err), nil
 		}
@@ -265,7 +256,7 @@ func registerAgendaTools(s *server.MCPServer) {
 		taskID := int64(taskIDf)
 		isCompleted, _ := args["is_completed"].(bool)
 
-		eng, err := agenda.New(projectPath())
+		eng, err := agenda.New(projectDir)
 		if err != nil {
 			return mcpError(err), nil
 		}
@@ -305,7 +296,7 @@ func registerAgendaTools(s *server.MCPServer) {
 			}
 		}
 
-		eng, err := agenda.New(projectPath())
+		eng, err := agenda.New(projectDir)
 		if err != nil {
 			return mcpError(err), nil
 		}
@@ -325,7 +316,7 @@ func registerAgendaTools(s *server.MCPServer) {
 		idF, _ := req.GetArguments()["agenda_id"].(float64)
 		agendaID := int64(idF)
 
-		eng, err := agenda.New(projectPath())
+		eng, err := agenda.New(projectDir)
 		if err != nil {
 			return mcpError(err), nil
 		}

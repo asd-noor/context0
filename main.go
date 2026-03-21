@@ -14,9 +14,9 @@ import (
 
 func main() {
 	root := &cobra.Command{
-		Use:   "ctx0",
+		Use:   "context0",
 		Short: "Context0 — AI-agent knowledge retrieval and task management",
-		Long: `ctx0 is a CLI tool and MCP daemon for AI coding agents.
+		Long: `context0 is a CLI tool and MCP daemon for AI coding agents.
 
 It provides:
   - Memory Engine: persistent project knowledge with hybrid search
@@ -24,11 +24,15 @@ It provides:
   - MCP server:    expose all tools via Model Context Protocol (stdio)`,
 	}
 
+	cwd, _ := os.Getwd()
+	var projectDir string
+	root.PersistentFlags().StringVarP(&projectDir, "project", "p", cwd, "Project directory (defaults to current working directory)")
+
 	root.AddCommand(
-		cmdmemory.NewCmd(),
-		cmdagenda.NewCmd(),
-		cmdmcp.NewCmd(),
-		cmdcodemap.NewCmd(),
+		cmdmemory.NewCmd(&projectDir),
+		cmdagenda.NewCmd(&projectDir),
+		cmdmcp.NewCmd(&projectDir),
+		cmdcodemap.NewCmd(&projectDir),
 	)
 
 	if err := root.Execute(); err != nil {

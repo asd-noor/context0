@@ -1,4 +1,4 @@
-// Package memory provides the `ctx0 memory` CLI sub-commands.
+// Package memory provides the `context0 memory` CLI sub-commands.
 package memory
 
 import (
@@ -13,31 +13,22 @@ import (
 )
 
 // NewCmd returns the `memory` sub-command tree.
-func NewCmd() *cobra.Command {
+func NewCmd(projectDir *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "memory",
 		Short: "Manage project memories (save, query, update, delete)",
 	}
 
 	cmd.AddCommand(
-		newSaveCmd(),
-		newQueryCmd(),
-		newUpdateCmd(),
-		newDeleteCmd(),
+		newSaveCmd(projectDir),
+		newQueryCmd(projectDir),
+		newUpdateCmd(projectDir),
+		newDeleteCmd(projectDir),
 	)
 	return cmd
 }
 
-// projectPath returns the current working directory as the project path.
-func projectPath() string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "."
-	}
-	return cwd
-}
-
-func newSaveCmd() *cobra.Command {
+func newSaveCmd(projectDir *string) *cobra.Command {
 	var category, topic, content string
 
 	cmd := &cobra.Command{
@@ -47,7 +38,7 @@ func newSaveCmd() *cobra.Command {
 			if category == "" || topic == "" || content == "" {
 				return fmt.Errorf("--category, --topic, and --content are required")
 			}
-			eng, err := memory.New(projectPath())
+			eng, err := memory.New(*projectDir)
 			if err != nil {
 				return err
 			}
@@ -68,7 +59,7 @@ func newSaveCmd() *cobra.Command {
 	return cmd
 }
 
-func newQueryCmd() *cobra.Command {
+func newQueryCmd(projectDir *string) *cobra.Command {
 	var topK int
 
 	cmd := &cobra.Command{
@@ -77,7 +68,7 @@ func newQueryCmd() *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			query := args[0]
-			eng, err := memory.New(projectPath())
+			eng, err := memory.New(*projectDir)
 			if err != nil {
 				return err
 			}
@@ -111,7 +102,7 @@ func newQueryCmd() *cobra.Command {
 	return cmd
 }
 
-func newUpdateCmd() *cobra.Command {
+func newUpdateCmd(projectDir *string) *cobra.Command {
 	var category, topic, content string
 
 	cmd := &cobra.Command{
@@ -127,7 +118,7 @@ func newUpdateCmd() *cobra.Command {
 				return fmt.Errorf("at least one of --category, --topic, --content is required")
 			}
 
-			eng, err := memory.New(projectPath())
+			eng, err := memory.New(*projectDir)
 			if err != nil {
 				return err
 			}
@@ -148,7 +139,7 @@ func newUpdateCmd() *cobra.Command {
 	return cmd
 }
 
-func newDeleteCmd() *cobra.Command {
+func newDeleteCmd(projectDir *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "delete <id>",
 		Short: "Delete a memory by ID",
@@ -159,7 +150,7 @@ func newDeleteCmd() *cobra.Command {
 				return fmt.Errorf("invalid id: %w", err)
 			}
 
-			eng, err := memory.New(projectPath())
+			eng, err := memory.New(*projectDir)
 			if err != nil {
 				return err
 			}

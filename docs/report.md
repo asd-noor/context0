@@ -2,11 +2,13 @@
 
 ## Overview
 
-Context0 (`ctx0`) is a daemon-style CLI tool and MCP server that acts as a persistent knowledge layer for AI coding agents. It provides three independent engines — Memory, Agenda, and Code Exploration — each backed by a per-project SQLite database stored under `~/.context0/<project-dir>/`.
+Context0 (`context0`) is a CLI tool and MCP server that acts as a persistent knowledge layer for AI coding agents. It provides three independent engines — Memory, Agenda, and Code Exploration — each backed by a per-project SQLite database stored under `~/.context0/<project-dir>/`.
 
 The tool is exposed in two modes:
-- **CLI** (`ctx0 memory ...`, `ctx0 agenda ...`) for direct human or script use
-- **MCP stdio server** (`ctx0 mcp`, `ctx0 codemap mcp`) for AI agent integration via the Model Context Protocol
+- **CLI** (`context0 memory ...`, `context0 agenda ...`, `context0 codemap ...`) for direct human or script use
+- **MCP stdio server** (`context0 mcp`, `context0 codemap mcp`) for AI agent integration via the Model Context Protocol
+
+All commands accept a root-level `--project / -p` flag (defaults to CWD) that controls which project's databases are used. This flag is inherited by every subcommand.
 
 ---
 
@@ -33,16 +35,17 @@ The tool is exposed in two modes:
 
 ```
 context0/
-├── main.go                     # Binary entry point (cobra root)
+├── main.go                     # Binary entry point — defines root `context0` command + --project flag
 ├── go.mod
 ├── mise.toml                   # Tool versions + build tasks
 ├── cmd/
-│   ├── memory/memory.go        # ctx0 memory subcommands
-│   ├── agenda/agenda.go        # ctx0 agenda subcommands
-│   ├── mcp/mcp.go              # ctx0 mcp (Memory + Agenda MCP server)
-│   └── codemap/codemap.go      # ctx0 codemap mcp (Code Exploration MCP server)
+│   ├── memory/memory.go        # context0 memory subcommands
+│   ├── agenda/agenda.go        # context0 agenda subcommands
+│   ├── mcp/mcp.go              # context0 mcp (Memory + Agenda MCP server)
+│   └── codemap/codemap.go      # context0 codemap subcommands (CLI-first + MCP)
 ├── internal/
-│   ├── db/path.go              # Per-project DB path resolution
+│   ├── db/path.go              # Per-project DB path resolution + PIDPath helper
+│   ├── daemon/daemon.go        # PID file management + detached process spawn
 │   ├── memory/                 # Memory engine
 │   │   ├── db.go               # Schema: docs, docs_fts, docs_vec, triggers
 │   │   ├── embed.go            # HTTP embedding client (LM Studio / Ollama)
@@ -53,7 +56,7 @@ context0/
 │   │   └── engine.go           # CRUD + FTS5 search + task lifecycle
 │   ├── graph/                  # Semantic code graph
 │   │   ├── types.go            # Node, Edge, Relation constants
-│   │   └── store.go            # SQLite-backed graph store
+│   │   └── store.go            # SQLite-backed graph store + ErrNotIndexed + OpenReadOnly
 │   ├── scanner/                # Tree-sitter AST scanner
 │   │   ├── queries.go          # S-expression queries per language
 │   │   └── scanner.go          # Directory walker → graph nodes
@@ -61,12 +64,13 @@ context0/
 │   │   ├── types.go            # JSON-RPC + LSP message types
 │   │   ├── transport.go        # Content-Length framing (read/write)
 │   │   └── lsp.go              # Client subprocess pool + Enrich()
-│   ├── watcher/watcher.go      # fsnotify → incremental re-index
-│   ├── codemapserver/          # Code Exploration MCP server
-│   │   ├── server.go           # Index lifecycle + wiring
-│   │   ├── tools.go            # 5 MCP tools
-│   │   ├── resources.go        # 1 MCP resource (usage-guidelines)
-│   │   └── prompts.go          # 2 MCP prompts
+│   ├── watcher/watcher.go      # fsnotify → incremental re-index; idle auto-stop after 5 min
+│   ├── codemapserver/          # Code Exploration engine wiring
+│   │   ├── server.go           # Index lifecycle; New() and NewWatch() constructors
+│   │   ├── query.go            # Shared CLI+MCP helpers (NodeWithSource, GetSymbolWithSource, …)
+│   │   ├── tools.go            # MCP tool registrations
+│   │   ├── resources.go        # MCP resource (usage-guidelines)
+│   │   └── prompts.go          # MCP prompts
 │   └── pkgmgr/                 # LSP binary resolver
 │       ├── manager.go
 │       └── metadata.go
@@ -87,6 +91,7 @@ All databases are stored at:
     memory.sqlite
     agenda.sqlite
     codemap.sqlite
+    codemap.pid        # written by `context0 codemap watch`; removed on exit
 ```
 
 The project path is transformed by replacing path separators with `;`:
@@ -192,10 +197,10 @@ DeleteMemory(id)                             engine.go:196
 ### CLI Commands
 
 ```
-ctx0 memory save    --category <c> --topic <t> --content <C>
-ctx0 memory query   <text> [--top <k>]
-ctx0 memory update  <id> [--category] [--topic] [--content]
-ctx0 memory delete  <id>
+context0 memory save    --category <c> --topic <t> --content <C>
+context0 memory query   <text> [--top <k>]
+context0 memory update  <id> [--category] [--topic] [--content]
+context0 memory delete  <id>
 ```
 
 ### MCP Tools
@@ -240,14 +245,14 @@ The Agenda engine does **not** use text embeddings. All search is FTS5-based. Th
 ### CLI Commands
 
 ```
-ctx0 agenda create  --title <t> --description <d> [--task <t>]...
-ctx0 agenda list    [--all]
-ctx0 agenda get     <id>
-ctx0 agenda search  <query> [--limit <n>]
-ctx0 agenda task    done   <task-id>
-ctx0 agenda task    reopen <task-id>
-ctx0 agenda update  <id> [--title] [--description] [--deactivate] [--tasks <json>]
-ctx0 agenda delete  <id>
+context0 agenda create  --title <t> --description <d> [--task <t>]...
+context0 agenda list    [--all]
+context0 agenda get     <id>
+context0 agenda search  <query> [--limit <n>]
+context0 agenda task    done   <task-id>
+context0 agenda task    reopen <task-id>
+context0 agenda update  <id> [--title] [--description] [--deactivate] [--tasks <json>]
+context0 agenda delete  <id>
 ```
 
 ### MCP Tools
@@ -268,7 +273,7 @@ delete_agenda   (id)
 
 ### Purpose
 
-Builds and maintains a real-time semantic graph of the codebase. Combines Tree-sitter AST parsing for symbol extraction with LSP-based cross-reference enrichment. Exposed to AI agents via MCP tools for symbol lookup, definition navigation, and change impact analysis.
+Builds and maintains a real-time semantic graph of the codebase. Combines Tree-sitter AST parsing for symbol extraction with LSP-based cross-reference enrichment. Exposed directly via CLI commands and to AI agents via MCP tools for symbol lookup, definition navigation, and change impact analysis.
 
 ### Architecture
 
@@ -279,6 +284,10 @@ codemapserver.Server
   ├─ graph.Store          (SQLite: stores Nodes + Edges)
   └─ watcher.Watcher      (fsnotify: drives incremental re-index on file changes)
 ```
+
+Two constructors serve different use cases:
+- `codemapserver.New(ctx, rootDir)` — used by `index`, `symbol`, and `mcp` subcommands; idle-timeout from the watcher is suppressed (process lifetime governs shutdown).
+- `codemapserver.NewWatch(ctx, cancel, rootDir)` — used by `watch`; passes the real cancel so the watcher's idle-timeout fires `cancel()` and the daemon exits cleanly.
 
 ### Storage Schema (`codemap.sqlite`)
 
@@ -294,17 +303,19 @@ Edge relations: `calls`, `implements`, `references`, `imports`.
 
 Indexes on `file_path`, `name`, `source_id`, `target_id` for fast lookup.
 
+`graph.OpenReadOnly()` opens the database with `mode=ro` and returns `ErrNotIndexed` if the file does not exist yet, preventing accidental DB creation by read-only commands.
+
 ### Index Lifecycle
 
 ```
-Server.New(ctx, rootDir)
+codemapserver.New(ctx, rootDir)
   ├─ util.FindGitRoot(rootDir)     — anchor to repo root
   ├─ graph.Open(rootDir)           — open/create codemap.sqlite
   ├─ pkgmgr.New(rootDir)           — resolve LSP binaries
   ├─ scanner.New(root)
   ├─ lsp.NewService(rootDir, pm)
   └─ go runIndex(ctx)              — initial full index
-     go watcher.Run(ctx)           — incremental updates
+     go watcher.Run(ctx, cancel)   — incremental updates + idle auto-stop
 
 runIndex → doIndex:
   ├─ store.Clear()
@@ -354,21 +365,49 @@ Supported servers: `gopls`, `pylsp`, `typescript-language-server`, `lua-language
 ### Incremental Re-indexing (Watcher)
 
 ```
-watcher.Run(ctx)
+watcher.Run(ctx, cancel)
   ├─ fsnotify events (Create/Write/Remove/Rename)
   │    └─ filter gitignore, watch new dirs, add to pending map
-  └─ 100ms poll ticker
-       └─ flush() — for each path where deadline (500ms debounce) passed:
-            ├─ Remove/Rename → store.DeleteNodesByFile(path)
-            └─ Create/Write  → reindexFile(path):
-                 ├─ store.DeleteNodesByFile(path)
-                 ├─ scanner.ScanFile(ctx, path)  → []Node
-                 ├─ store.BulkUpsertNodes(nodes)
-                 ├─ lsp.Enrich(ctx, nodes, store) → []Edge
-                 └─ store.BulkUpsertEdges(edges)
+  ├─ 100ms poll ticker
+  │    └─ flush() — for each path where deadline (500ms debounce) passed:
+  │         ├─ Remove/Rename → store.DeleteNodesByFile(path)
+  │         └─ Create/Write  → reindexFile(path):
+  │              ├─ store.DeleteNodesByFile(path)
+  │              ├─ scanner.ScanFile(ctx, path)  → []Node
+  │              ├─ store.BulkUpsertNodes(nodes)
+  │              ├─ lsp.Enrich(ctx, nodes, store) → []Edge
+  │              └─ store.BulkUpsertEdges(edges)
+  └─ 5-minute idle timer
+       └─ no file activity for 5 min → cancel() → daemon exits
 ```
 
-The watcher process stays alive for 5 minutes from last file activity, then exits. It is restarted on next CLI invocation or MCP tool call.
+### Daemon Mode
+
+The watcher runs as a background daemon managed through a PID file:
+
+```
+context0 codemap watch      — start daemon in foreground; writes PID to codemap.pid;
+                              blocks until 5-minute idle timeout fires
+context0 codemap mcp        — checks PID file; if daemon is not alive, spawns it as a
+                              detached background process and returns a retry message;
+                              otherwise starts the MCP stdio server normally
+```
+
+`daemon.Spawn()` launches `context0 codemap --project <root> watch` as a detached child process (new session via `Setsid`) with stdin/stdout/stderr closed.
+
+### CLI Commands
+
+```
+context0 codemap [--project <dir>] watch
+context0 codemap [--project <dir>] index
+context0 codemap [--project <dir>] status
+context0 codemap [--project <dir>] symbols <file> [--json]
+context0 codemap [--project <dir>] symbol  <name>  [--source] [--json]
+context0 codemap [--project <dir>] impact  <name>  [--json]
+context0 codemap [--project <dir>] mcp
+```
+
+Read-only commands (`status`, `symbols`, `impact`) use `graph.OpenReadOnly()` and return `"project has not been indexed yet — run: context0 codemap index"` if no index exists.
 
 ### MCP Tools
 
@@ -399,7 +438,7 @@ analyze_change_impact(symbol)   — Impact analysis workflow for a named symbol
 
 Context0 exposes two independent MCP stdio servers:
 
-### `ctx0 mcp` — Memory + Agenda
+### `context0 mcp` — Memory + Agenda
 
 ```
 stdin/stdout (JSON-RPC / MCP)
@@ -409,9 +448,9 @@ stdin/stdout (JSON-RPC / MCP)
           update_task, update_agenda, delete_agenda
 ```
 
-Project path is resolved from `cwd` at call time — each tool call is stateless.
+Project path is taken from the `--project` flag (defaults to CWD). Each tool call is stateless — a fresh engine is opened and closed per call.
 
-### `ctx0 codemap mcp` — Code Exploration
+### `context0 codemap mcp` — Code Exploration
 
 ```
 stdin/stdout (JSON-RPC / MCP)
@@ -422,7 +461,7 @@ stdin/stdout (JSON-RPC / MCP)
        └─ Prompts:  explore_codebase, analyze_change_impact
 ```
 
-The server is stateful — it holds a `codemapserver.Server` instance with the index, LSP clients, and file watcher for the lifetime of the MCP session.
+The server is stateful — it holds a `codemapserver.Server` instance with the index, LSP clients, and file watcher for the lifetime of the MCP session. If the codemap daemon is not running when `context0 codemap mcp` is invoked, it is auto-spawned and the caller is asked to retry in 5 seconds.
 
 ---
 
@@ -447,6 +486,14 @@ Walks up the directory tree checking for a `.git` directory. Used by `codemapser
 ---
 
 ## Key Design Decisions
+
+**CLI-first for Code Exploration.** Every codemap capability (`index`, `status`, `symbols`, `symbol`, `impact`) is a direct CLI command. MCP is an additional surface, not the primary one. This makes the tool usable without an AI agent and simplifies debugging.
+
+**Root-level `--project` flag.** All four top-level command groups (`memory`, `agenda`, `mcp`, `codemap`) inherit a single `--project / -p` persistent flag from the root `context0` command. No command relies on CWD implicitly at the engine level.
+
+**Daemon with PID file.** The codemap watcher runs as a separate background process tracked by a PID file. This allows the short-lived CLI commands (`status`, `symbols`, etc.) and the MCP server to share the same watcher without each spawning their own. `context0 codemap mcp` auto-spawns the daemon if it is not running.
+
+**Read-only guard (`ErrNotIndexed`).** `graph.OpenReadOnly()` checks for the DB file's existence before opening with `mode=ro`, returning a clear `ErrNotIndexed` sentinel. This prevents accidental DB creation by read-only commands and gives users an actionable error message.
 
 **Hybrid search (Memory).** FTS5 alone would fail on vocabulary mismatch between how memories are written and how they are queried. Vector search alone would miss exact keyword matches. RRF fusion combines both, giving better recall than either approach alone.
 

@@ -69,7 +69,7 @@ func New(ctx context.Context, rootDir string) (*Server, error) {
 
 // NewWatch is like New but passes cancel to the watcher so that the watcher's
 // idle-timeout fires cancel(), unblocking the caller's <-ctx.Done().
-// Use this when running ctx0 codemap --watch <dir>.
+// Use this when running context0 codemap --watch <dir>.
 func NewWatch(ctx context.Context, cancel context.CancelFunc, rootDir string) (*Server, error) {
 	return newServer(ctx, rootDir, cancel)
 }

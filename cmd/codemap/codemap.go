@@ -1,17 +1,17 @@
-// Package codemap provides the `ctx0 codemap` CLI sub-commands.
+// Package codemap provides the `context0 codemap` CLI sub-commands.
 //
 // CLI-first design — every codemap capability is a direct CLI command.
 // The MCP server is an additional surface for AI tools (Claude Code, etc.).
 //
 // All sub-commands share the parent-level --project flag (default: CWD):
 //
-//	ctx0 codemap [--project <dir>] watch     — run the daemon (blocks; auto-stops on idle)
-//	ctx0 codemap [--project <dir>] index     — (re)build the symbol index
-//	ctx0 codemap [--project <dir>] status    — show current index status
-//	ctx0 codemap [--project <dir>] symbols <file> — list symbols in a file
-//	ctx0 codemap [--project <dir>] symbol  <name> — find a symbol across the project
-//	ctx0 codemap [--project <dir>] impact  <name> — show transitive impact of a symbol
-//	ctx0 codemap [--project <dir>] mcp     — start the MCP stdio server (for AI tools)
+//	context0 codemap [--project <dir>] watch     — run the daemon (blocks; auto-stops on idle)
+//	context0 codemap [--project <dir>] index     — (re)build the symbol index
+//	context0 codemap [--project <dir>] status    — show current index status
+//	context0 codemap [--project <dir>] symbols <file> — list symbols in a file
+//	context0 codemap [--project <dir>] symbol  <name> — find a symbol across the project
+//	context0 codemap [--project <dir>] impact  <name> — show transitive impact of a symbol
+//	context0 codemap [--project <dir>] mcp     — start the MCP stdio server (for AI tools)
 package codemap
 
 import (
@@ -33,26 +33,22 @@ import (
 )
 
 // NewCmd returns the root `codemap` cobra command with all sub-commands attached.
-func NewCmd() *cobra.Command {
-	var projectDir string
-
+func NewCmd(projectDir *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "codemap",
 		Short: "Code Exploration Engine",
 	}
 
-	// --project is inherited by every sub-command via PersistentFlags.
-	cwd, _ := os.Getwd()
-	cmd.PersistentFlags().StringVarP(&projectDir, "project", "p", cwd, "Project directory (git root is resolved automatically)")
+	// --project is inherited from the root context0 command via PersistentFlags.
 
 	cmd.AddCommand(
-		newWatchCmd(&projectDir),
-		newIndexCmd(&projectDir),
-		newStatusCmd(&projectDir),
-		newSymbolsCmd(&projectDir),
-		newSymbolCmd(&projectDir),
-		newImpactCmd(&projectDir),
-		newMCPCmd(&projectDir),
+		newWatchCmd(projectDir),
+		newIndexCmd(projectDir),
+		newStatusCmd(projectDir),
+		newSymbolsCmd(projectDir),
+		newSymbolCmd(projectDir),
+		newImpactCmd(projectDir),
+		newMCPCmd(projectDir),
 	)
 	return cmd
 }

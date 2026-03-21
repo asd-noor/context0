@@ -1,7 +1,6 @@
 // Package codemap provides the `context0 codemap` CLI sub-commands.
 //
 // CLI-first design — every codemap capability is a direct CLI command.
-// The MCP server is an additional surface for AI tools (Claude Code, etc.).
 //
 // All sub-commands share the parent-level --project flag (default: CWD):
 //
@@ -11,7 +10,6 @@
 //	context0 codemap [--project <dir>] symbols <file> — list symbols in a file
 //	context0 codemap [--project <dir>] symbol  <name> — find a symbol across the project
 //	context0 codemap [--project <dir>] impact  <name> — show transitive impact of a symbol
-//	context0 codemap [--project <dir>] mcp     — start the MCP stdio server (for AI tools)
 package codemap
 
 import (
@@ -21,8 +19,6 @@ import (
 	"os"
 	"text/tabwriter"
 
-	mcpgo "github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 	"github.com/spf13/cobra"
 
 	"context0/internal/codemapserver"
@@ -48,7 +44,6 @@ func NewCmd(projectDir *string) *cobra.Command {
 		newSymbolsCmd(projectDir),
 		newSymbolCmd(projectDir),
 		newImpactCmd(projectDir),
-		newMCPCmd(projectDir),
 	)
 	return cmd
 }
@@ -87,6 +82,10 @@ func runWatch(dir string) error {
 	pidPath, err := db.PIDPath(root)
 	if err != nil {
 		return fmt.Errorf("codemap watch: pid path: %w", err)
+	}
+	if daemon.IsAlive(pidPath) {
+		fmt.Println("codemap daemon is already running")
+		return nil
 	}
 	if err := daemon.WritePID(pidPath); err != nil {
 		return fmt.Errorf("codemap watch: write pid: %w", err)
@@ -309,61 +308,6 @@ func runImpact(dir, name string, jsonOut bool) error {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%d-%d\n", n.Kind, n.Name, n.FilePath, n.LineStart, n.LineEnd)
 	}
 	return w.Flush()
-}
-
-// ── mcp ───────────────────────────────────────────────────────────────────────
-
-func newMCPCmd(projectDir *string) *cobra.Command {
-	return &cobra.Command{
-		Use:   "mcp",
-		Short: "Start the codemap MCP stdio server (for AI tools such as Claude Code)",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCodemapMCP(*projectDir)
-		},
-	}
-}
-
-func runCodemapMCP(dir string) error {
-	root := gitRoot(dir)
-
-	pidPath, err := db.PIDPath(root)
-	if err != nil {
-		return fmt.Errorf("codemap mcp: pid path: %w", err)
-	}
-
-	if !daemon.IsAlive(pidPath) {
-		exe, err := os.Executable()
-		if err != nil {
-			return fmt.Errorf("codemap mcp: locate executable: %w", err)
-		}
-		if err := daemon.Spawn(exe, root); err != nil {
-			return fmt.Errorf("codemap mcp: spawn daemon: %w", err)
-		}
-		fmt.Fprintln(os.Stdout, "codemap daemon is starting — please retry in 5 seconds")
-		return nil
-	}
-
-	ctx := context.Background()
-	srv, err := codemapserver.New(ctx, root)
-	if err != nil {
-		return fmt.Errorf("codemap mcp: start server: %w", err)
-	}
-	defer srv.Close()
-
-	s := server.NewMCPServer(
-		"context0-codemap",
-		"0.1.0",
-		server.WithToolCapabilities(true),
-		server.WithResourceCapabilities(true, false),
-		server.WithPromptCapabilities(true),
-	)
-	codemapserver.RegisterTools(s, srv)
-	codemapserver.RegisterResources(s)
-	codemapserver.RegisterPrompts(s)
-
-	_ = mcpgo.NewTool
-	return server.ServeStdio(s)
 }
 
 // ── shared helpers ────────────────────────────────────────────────────────────

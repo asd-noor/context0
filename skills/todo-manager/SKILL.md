@@ -1,4 +1,12 @@
-# todo-manager
+---
+name: todo-manager
+description: Create and manage structured task plans with acceptance criteria using context0's Agenda Engine. Use when starting multi-step tasks, tracking progress, marking tasks complete, or searching for existing plans. Triggers on agenda, plan, todo, tasks, progress, checklist.
+license: GPL-3.0
+compatibility: Requires context0 binary in PATH.
+allowed-tools: Bash
+---
+
+# Todo Manager
 
 Use this skill to create and manage structured task plans using context0's Agenda Engine.
 

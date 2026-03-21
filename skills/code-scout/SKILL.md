@@ -1,4 +1,12 @@
-# code-scout
+---
+name: code-scout
+description: Explore a codebase's symbol graph using context0's Code Exploration Engine. Use when finding symbol definitions, listing file symbols, analyzing change impact, or starting the indexing daemon. Triggers on codemap, symbols, definitions, references, impact analysis, codebase exploration.
+license: GPL-3.0
+compatibility: Requires context0 binary in PATH. LSP servers (gopls, pylsp, typescript-language-server, lua-language-server, zls) are auto-downloaded if not in PATH.
+allowed-tools: Bash
+---
+
+# Code Scout
 
 Use this skill to explore a codebase's symbol graph using context0's Code Exploration Engine.
 

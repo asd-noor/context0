@@ -1,4 +1,12 @@
-# project-notes
+---
+name: project-notes
+description: Persist and retrieve project-specific knowledge using context0's Memory Engine. Use when saving decisions, architecture notes, bug fixes, environment details, or looking up previously recorded project context. Triggers on memory, remember, recall, knowledge, notes, decisions, context.
+license: GPL-3.0
+compatibility: Requires context0 binary in PATH and Ollama running with an embedding model.
+allowed-tools: Bash
+---
+
+# Project Notes
 
 Use this skill to persist and retrieve project-specific knowledge using context0's Memory Engine.
 

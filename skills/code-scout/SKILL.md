@@ -91,14 +91,14 @@ Do not use `index` as a routine step — the daemon handles indexing automatical
 
 - Database: `~/.context0/<project>/codemap.sqlite`
 - Node ID: `SHA256(filePath:name:kind)[:16]` — stable 32-char hex
-- Supported languages: Go (`.go`), Python (`.py`), JavaScript (`.js`, `.jsx`), TypeScript (`.ts`, `.tsx`), Lua (`.lua`)
+- Supported languages: Go (`.go`), Python (`.py`), JavaScript (`.js`, `.jsx`), TypeScript (`.ts`, `.tsx`), Lua (`.lua`), Zig (`.zig`)
 - Extracted kinds: `function`, `method`, `type`, `class`, `interface`
 - Edge relations: `calls`, `implements`, `references`, `imports`
-- Skipped paths: `vendor/`, `node_modules/`, `__pycache__/`, `.git/`, generated files
+- Skipped paths: `vendor/`, `node_modules/`, `__pycache__/`, `.git/`, `zig-cache/`, `zig-out/`, generated files
 
 The index is built in two phases:
 1. **Tree-sitter scan** — fast, offline; extracts symbol nodes from AST
-2. **LSP enrichment** — extracts cross-reference edges using `gopls`, `pylsp`, `typescript-language-server`, or `lua-language-server`
+2. **LSP enrichment** — extracts cross-reference edges using `gopls`, `pylsp`, `typescript-language-server`, `lua-language-server`, or `zls`
 
 LSP binaries are resolved automatically: `PATH` → cache (`~/.context0/bin/`) → auto-download.
 

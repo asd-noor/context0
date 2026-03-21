@@ -167,6 +167,20 @@ func (e *Engine) SearchAgendas(query string, limit int) ([]Agenda, error) {
 	return agendas, rows.Err()
 }
 
+// UpdateTaskByOrder sets the is_completed flag for a task identified by
+// agenda ID and 0-based task order, then runs auto-deactivation.
+func (e *Engine) UpdateTaskByOrder(agendaID int64, taskOrder int, isCompleted bool) error {
+	var taskID int64
+	err := e.db.QueryRow(
+		`SELECT id FROM tasks WHERE agenda_id=? AND task_order=?`,
+		agendaID, taskOrder,
+	).Scan(&taskID)
+	if err != nil {
+		return fmt.Errorf("update_task: no task at order %d in agenda %d: %w", taskOrder, agendaID, err)
+	}
+	return e.UpdateTask(taskID, isCompleted)
+}
+
 // UpdateTask sets the is_completed flag for a task and runs auto-deactivation.
 func (e *Engine) UpdateTask(taskID int64, isCompleted bool) error {
 	tx, err := e.db.Begin()

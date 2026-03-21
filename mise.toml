@@ -1,19 +1,11 @@
 [tools]
 go = "1.26.1"
-# zig = "0.15.2"
 
 [env]
 MISE_GO_SET_GOROOT = true
 GOPATH = "/Users/noor/.local/gopath/1.26.1"
 
-# [tasks.deps]
-# description = "Download ONNX runtime dylib and tokenizer static lib"
-# run = """
-# #!/usr/bin/env bash
-#
-# mkdir -p deps
-# # onnxruntime arm64 dylib
-# curl -L https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-osx-arm64-1.22.0.tgz | tar xz -C deps
-# # libtokenizers.a prebuilt for darwin-arm64
-# curl -L https://github.com/daulet/tokenizers/releases/download/v1.26.0/libtokenizers.darwin-arm64.tar.gz | tar xz -C deps
-# """
+[tasks.build]
+description = "Build context0 binary with FTS5 and sqlite-vec support"
+run = "CGO_ENABLED=1 go build -tags fts5 -o context0 ."
+

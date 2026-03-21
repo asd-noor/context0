@@ -12,7 +12,7 @@ Use this skill to persist and retrieve project-specific knowledge using context0
 
 ```
 context0 memory save    --category <c> --topic <t> --content <C>
-context0 memory query   <text> [--top <k>]
+context0 memory query   <text> [--top <k>] [--minimal]
 context0 memory update  <id> [--category <c>] [--topic <t>] [--content <C>]
 context0 memory delete  <id>
 ```
@@ -37,11 +37,16 @@ context0 memory save \
 
 ### Querying memories
 
-Use `memory query` before starting a new task — it combines keyword (BM25) and vector search and returns the most relevant stored memories.
+Use `memory query` before starting a new task — it combines keyword (BM25) and vector search and returns the most relevant stored memories with full untruncated content.
 
 Example:
 ```
 context0 memory query "why did we choose the sqlite driver" --top 5
+```
+
+Use `--minimal` for a compact table with truncated content (useful for quick scanning):
+```
+context0 memory query "sqlite driver" --minimal
 ```
 
 ### Updating a memory

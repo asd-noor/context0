@@ -12,12 +12,12 @@ Use this skill to create and manage structured task plans using context0's Agend
 ## CLI commands
 
 ```
-context0 agenda create  --title <t> --description <d> [--task <t>]...
+context0 agenda create  --title <t> --description <d> [--task <t>]... [--task-guard <g>]...
 context0 agenda list    [--all]
 context0 agenda get     <id>
 context0 agenda search  <query> [--limit <n>]
-context0 agenda task    done   <task-id>
-context0 agenda task    reopen <task-id>
+context0 agenda task    done   <agenda-id> <task-number>
+context0 agenda task    reopen <agenda-id> <task-number>
 context0 agenda update  <id> [--title <t>] [--description <d>] [--deactivate] [--tasks <json>]
 context0 agenda delete  <id>
 ```
@@ -28,7 +28,7 @@ Add `--project <dir>` to any command to target a specific project directory inst
 
 ### Creating an agenda
 
-Create an agenda at the start of a multi-step task. Pass each task with a separate `--task` flag. Mark non-critical tasks as optional in the JSON tasks update.
+Create an agenda at the start of a multi-step task. Pass each task with a separate `--task` flag. Use `--task-guard` to set acceptance criteria for each corresponding task (positional pairing, same order as `--task`).
 
 Example:
 ```
@@ -36,9 +36,13 @@ context0 agenda create \
   --title "Add authentication middleware" \
   --description "Implement JWT validation middleware and integrate it with all protected routes." \
   --task "Create JWT validation function in internal/auth/jwt.go" \
+  --task-guard "jwt.go exists and compiles with go vet" \
   --task "Write unit tests for the validation function" \
+  --task-guard "go test ./internal/auth/... passes" \
   --task "Integrate middleware into the router" \
-  --task "Update API documentation"
+  --task-guard "Protected routes return 401 without valid token" \
+  --task "Update API documentation" \
+  --task-guard "README documents the auth header format"
 ```
 
 ### Checking progress
@@ -57,16 +61,18 @@ context0 agenda get 7
 
 ### Marking tasks complete
 
-After completing each task, mark it done immediately:
+**Before marking a task done, check its acceptance guard** (the "Done when:" line shown by `agenda get`). Only mark the task complete when the guard condition is satisfied. If a task has no guard, use your judgement that the work is complete.
+
+Tasks are identified by **agenda ID** and **task number** (1-based, as shown by `agenda get`):
 
 ```
-context0 agenda task done 12
+context0 agenda task done 7 1
 ```
 
-Reopen a task if work needs to resume:
+Reopen a task if the guard condition is no longer met or work needs to resume:
 
 ```
-context0 agenda task reopen 12
+context0 agenda task reopen 7 1
 ```
 
 The engine automatically deactivates the agenda when all **required** (non-optional) tasks are complete.
@@ -107,4 +113,4 @@ context0 agenda delete 7
 
 - Call `agenda list` at the start of every session — if an active agenda exists, resume it rather than creating a duplicate
 - Mark truly optional steps (docs updates, nice-to-haves) as optional via `--tasks` JSON so they don't block auto-deactivation
-- Use `acceptance_guard` in the tasks JSON to record the specific condition that must be true before a task counts as done
+- Use `--task-guard` on `agenda create` to record the specific condition that must be true before a task counts as done

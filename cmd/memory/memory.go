@@ -62,6 +62,7 @@ func newSaveCmd(projectDir *string) *cobra.Command {
 
 func newQueryCmd(projectDir *string) *cobra.Command {
 	var topK int
+	var minimal bool
 
 	cmd := &cobra.Command{
 		Use:   "query <text>",
@@ -84,22 +85,34 @@ func newQueryCmd(projectDir *string) *cobra.Command {
 				return nil
 			}
 
-			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "ID\tCATEGORY\tTOPIC\tSCORE\tCONTENT")
-			for _, r := range results {
-				preview := r.Content
-				if len(preview) > 80 {
-					preview = preview[:77] + "..."
+			if minimal {
+				w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+				fmt.Fprintln(w, "ID\tCATEGORY\tTOPIC\tSCORE\tCONTENT")
+				for _, r := range results {
+					preview := r.Content
+					if len(preview) > 80 {
+						preview = preview[:77] + "..."
+					}
+					fmt.Fprintf(w, "%d\t%s\t%s\t%.4f\t%s\n",
+						r.ID, r.Category, r.Topic, r.Score, preview)
 				}
-				fmt.Fprintf(w, "%d\t%s\t%s\t%.4f\t%s\n",
-					r.ID, r.Category, r.Topic, r.Score, preview)
+				w.Flush()
+				return nil
 			}
-			w.Flush()
+
+			for i, r := range results {
+				if i > 0 {
+					fmt.Println("---")
+				}
+				fmt.Printf("ID: %d | Category: %s | Topic: %s | Score: %.4f\n\n%s\n",
+					r.ID, r.Category, r.Topic, r.Score, r.Content)
+			}
 			return nil
 		},
 	}
 
 	cmd.Flags().IntVarP(&topK, "top", "k", 3, "Number of results to return")
+	cmd.Flags().BoolVar(&minimal, "minimal", false, "Compact table with truncated content")
 	return cmd
 }
 

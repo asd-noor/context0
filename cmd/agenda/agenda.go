@@ -39,6 +39,7 @@ func newCreateCmd(projectDir *string) *cobra.Command {
 	var title, description string
 	var taskDetails []string
 	var taskOptional []bool
+	var taskGuards []string
 
 	cmd := &cobra.Command{
 		Use:   "create",
@@ -56,7 +57,11 @@ func newCreateCmd(projectDir *string) *cobra.Command {
 				if i < len(taskOptional) {
 					optional = taskOptional[i]
 				}
-				tasks[i] = agenda.TaskInput{Details: d, IsOptional: optional}
+				guard := ""
+				if i < len(taskGuards) {
+					guard = taskGuards[i]
+				}
+				tasks[i] = agenda.TaskInput{Details: d, IsOptional: optional, AcceptanceGuard: guard}
 			}
 
 			id, err := eng.CreateAgenda(title, description, tasks)
@@ -72,6 +77,7 @@ func newCreateCmd(projectDir *string) *cobra.Command {
 	cmd.Flags().StringVarP(&description, "description", "d", "", "Agenda description")
 	cmd.Flags().StringArrayVarP(&taskDetails, "task", "T", nil, "Task details (repeat for multiple tasks)")
 	cmd.Flags().BoolSliceVar(&taskOptional, "task-optional", nil, "Mark corresponding task as optional (repeat to match --task order)")
+	cmd.Flags().StringArrayVar(&taskGuards, "task-guard", nil, "Acceptance criteria for corresponding task (repeat to match --task order)")
 	return cmd
 }
 
@@ -163,7 +169,7 @@ func newGetCmd(projectDir *string) *cobra.Command {
 				if t.IsOptional {
 					opt = " (optional)"
 				}
-				fmt.Printf("    %s #%d%s: %s\n", done, t.ID, opt, t.Details)
+				fmt.Printf("    %s #%d%s: %s\n", done, t.TaskOrder+1, opt, t.Details)
 				if t.AcceptanceGuard != "" {
 					fmt.Printf("         Done when: %s\n", t.AcceptanceGuard)
 				}
@@ -233,27 +239,34 @@ func newTaskCmd(projectDir *string) *cobra.Command {
 
 func newTaskDoneCmd(projectDir *string) *cobra.Command {
 	return &cobra.Command{
-		Use:   "done <task-id>",
+		Use:   "done <agenda-id> <task-number>",
 		Short: "Mark a task as completed",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.ExactArgs(2),
 		RunE:  taskStateCmd(projectDir, true),
 	}
 }
 
 func newTaskReopenCmd(projectDir *string) *cobra.Command {
 	return &cobra.Command{
-		Use:   "reopen <task-id>",
+		Use:   "reopen <agenda-id> <task-number>",
 		Short: "Mark a task as pending",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.ExactArgs(2),
 		RunE:  taskStateCmd(projectDir, false),
 	}
 }
 
 func taskStateCmd(projectDir *string, done bool) func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, args []string) error {
-		id, err := strconv.ParseInt(args[0], 10, 64)
+		agendaID, err := strconv.ParseInt(args[0], 10, 64)
 		if err != nil {
-			return fmt.Errorf("invalid task id: %w", err)
+			return fmt.Errorf("invalid agenda id: %w", err)
+		}
+		taskNum, err := strconv.Atoi(args[1])
+		if err != nil {
+			return fmt.Errorf("invalid task number: %w", err)
+		}
+		if taskNum < 1 {
+			return fmt.Errorf("task number must be >= 1")
 		}
 
 		eng, err := agenda.New(*projectDir)
@@ -262,14 +275,14 @@ func taskStateCmd(projectDir *string, done bool) func(cmd *cobra.Command, args [
 		}
 		defer eng.Close()
 
-		if err := eng.UpdateTask(id, done); err != nil {
+		if err := eng.UpdateTaskByOrder(agendaID, taskNum-1, done); err != nil {
 			return err
 		}
 		state := "completed"
 		if !done {
 			state = "pending"
 		}
-		fmt.Printf("task %d marked as %s\n", id, state)
+		fmt.Printf("agenda %d: task %d marked as %s\n", agendaID, taskNum, state)
 		return nil
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -67,7 +68,7 @@ func newQueryCmd(projectDir *string) *cobra.Command {
 		Short: "Hybrid search memories",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			query := args[0]
+			query := strings.Join(args, " ")
 			eng, err := memory.New(*projectDir)
 			if err != nil {
 				return err

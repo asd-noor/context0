@@ -4,7 +4,7 @@
 //
 // All sub-commands share the parent-level --project flag (default: CWD):
 //
-//	context0 codemap [--project <dir>] watch     — run the daemon (blocks; auto-stops on idle)
+//	context0 codemap [--project <dir>] watch     — start the daemon in the background
 //	context0 codemap [--project <dir>] index     — (re)build the symbol index
 //	context0 codemap [--project <dir>] status    — show current index status
 //	context0 codemap [--project <dir>] symbols <file> — list symbols in a file
@@ -17,6 +17,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -66,16 +68,25 @@ func openStore(dir string) (*graph.Store, error) {
 // ── watch ─────────────────────────────────────────────────────────────────────
 
 func newWatchCmd(projectDir *string) *cobra.Command {
-	return &cobra.Command{
+	var daemonMode bool
+	cmd := &cobra.Command{
 		Use:   "watch",
-		Short: "Run the codemap daemon (blocks; auto-stops after 5 min of inactivity)",
+		Short: "Start the codemap daemon in the background (auto-stops after 5 min of inactivity)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if daemonMode {
+				return runWatchDaemon(*projectDir)
+			}
 			return runWatch(*projectDir)
 		},
 	}
+	cmd.Flags().BoolVar(&daemonMode, "daemon", false, "Run in foreground daemon mode (internal use)")
+	cmd.Flags().MarkHidden("daemon") //nolint:errcheck
+	return cmd
 }
 
+// runWatch is called by the user. It checks for an existing daemon, spawns a
+// detached background process, and prints the PID file path before returning.
 func runWatch(dir string) error {
 	root := gitRoot(dir)
 
@@ -84,7 +95,32 @@ func runWatch(dir string) error {
 		return fmt.Errorf("codemap watch: pid path: %w", err)
 	}
 	if daemon.IsAlive(pidPath) {
-		fmt.Println("codemap daemon is already running")
+		fmt.Printf("codemap daemon is already running, PIDFILE: %s\n", pidPath)
+		return nil
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("codemap watch: resolve executable: %w", err)
+	}
+	if err := daemon.Spawn(exe, root); err != nil {
+		return fmt.Errorf("codemap watch: %w", err)
+	}
+
+	fmt.Printf("Watcher started, PIDFILE: %s\n", pidPath)
+	return nil
+}
+
+// runWatchDaemon is the actual blocking daemon loop, invoked by the spawned
+// background child process via the hidden --daemon flag.
+func runWatchDaemon(dir string) error {
+	root := gitRoot(dir)
+
+	pidPath, err := db.PIDPath(root)
+	if err != nil {
+		return fmt.Errorf("codemap watch: pid path: %w", err)
+	}
+	if daemon.IsAlive(pidPath) {
 		return nil
 	}
 	if err := daemon.WritePID(pidPath); err != nil {
@@ -200,6 +236,7 @@ func runSymbols(dir, filePath string, jsonOut bool) error {
 		return err
 	}
 
+	root := gitRoot(dir)
 	ctx := context.Background()
 	store, err := openStore(dir)
 	if err != nil {
@@ -217,7 +254,7 @@ func runSymbols(dir, filePath string, jsonOut bool) error {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "KIND\tNAME\tLINES")
+	fmt.Fprintf(w, "KIND\tNAME\tLINES\t(%s)\n", relPath(root, absPath))
 	for _, n := range nodes {
 		fmt.Fprintf(w, "%s\t%s\t%d-%d\n", n.Kind, n.Name, n.LineStart, n.LineEnd)
 	}
@@ -242,31 +279,51 @@ func newSymbolCmd(projectDir *string) *cobra.Command {
 }
 
 func runSymbol(dir, name string, withSource, jsonOut bool) error {
+	root := gitRoot(dir)
 	ctx := context.Background()
-	srv, err := codemapserver.New(ctx, gitRoot(dir))
+	store, err := openStore(dir)
 	if err != nil {
 		return err
 	}
-	defer srv.Close()
+	defer store.Close()
 
-	results, err := srv.GetSymbolWithSource(ctx, name, withSource)
+	nodes, err := store.GetSymbolLocation(ctx, name)
 	if err != nil {
 		return err
+	}
+
+	results := make([]codemapserver.NodeWithSource, len(nodes))
+	for i, n := range nodes {
+		results[i] = codemapserver.NodeToWithSource(n, withSource)
 	}
 
 	if jsonOut {
 		return printJSON(results)
 	}
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "KIND\tFILE\tLINES\tNAME")
-	for _, n := range results {
-		fmt.Fprintf(w, "%s\t%s\t%d-%d\t%s\n", n.Kind, n.FilePath, n.LineStart, n.LineEnd, n.Name)
-		if withSource && n.Source != "" {
-			fmt.Fprintf(w, "\t%s\t\t\n", n.Source)
+	if !withSource {
+		// Compact table view when source is not requested.
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(w, "KIND\tFILE\tLINES\tNAME")
+		for _, n := range results {
+			fmt.Fprintf(w, "%s\t%s\t%d-%d\t%s\n", n.Kind, relPath(root, n.FilePath), n.LineStart, n.LineEnd, n.Name)
+		}
+		return w.Flush()
+	}
+
+	// With --source: print each result with a fenced code block.
+	for i, n := range results {
+		if i > 0 {
+			fmt.Println()
+		}
+		rel := relPath(root, n.FilePath)
+		fmt.Printf("%s  %s  %s  lines %d-%d\n", n.Kind, n.Name, rel, n.LineStart, n.LineEnd)
+		if n.Source != "" {
+			lang := langFromExt(n.FilePath)
+			fmt.Printf("```%s\n%s```\n", lang, n.Source)
 		}
 	}
-	return w.Flush()
+	return nil
 }
 
 // ── impact ────────────────────────────────────────────────────────────────────
@@ -286,6 +343,7 @@ func newImpactCmd(projectDir *string) *cobra.Command {
 }
 
 func runImpact(dir, name string, jsonOut bool) error {
+	root := gitRoot(dir)
 	ctx := context.Background()
 	store, err := openStore(dir)
 	if err != nil {
@@ -305,12 +363,43 @@ func runImpact(dir, name string, jsonOut bool) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "KIND\tNAME\tFILE\tLINES")
 	for _, n := range nodes {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%d-%d\n", n.Kind, n.Name, n.FilePath, n.LineStart, n.LineEnd)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%d-%d\n", n.Kind, n.Name, relPath(root, n.FilePath), n.LineStart, n.LineEnd)
 	}
 	return w.Flush()
 }
 
 // ── shared helpers ────────────────────────────────────────────────────────────
+
+// relPath returns a path relative to root. Falls back to the original if it
+// cannot be made relative (e.g. different volume on Windows).
+func relPath(root, absPath string) string {
+	rel, err := filepath.Rel(root, absPath)
+	if err != nil {
+		return absPath
+	}
+	return rel
+}
+
+// langFromExt maps a file extension to a Markdown fenced-code-block language tag.
+// Only the languages supported by the codemap scanner are listed.
+func langFromExt(filePath string) string {
+	switch strings.ToLower(filepath.Ext(filePath)) {
+	case ".go":
+		return "go"
+	case ".py":
+		return "python"
+	case ".ts":
+		return "typescript"
+	case ".js":
+		return "javascript"
+	case ".lua":
+		return "lua"
+	case ".zig":
+		return "zig"
+	default:
+		return ""
+	}
+}
 
 func printJSON(v any) error {
 	enc := json.NewEncoder(os.Stdout)

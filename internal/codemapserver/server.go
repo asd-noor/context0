@@ -56,6 +56,7 @@ type Server struct {
 	finishedAt time.Time
 	indexErr   error
 	done       chan struct{} // closed when status transitions to Ready or Failed
+	closeOnce  *sync.Once    // guards close(done); replaced alongside done
 }
 
 // New creates and starts a Server for the given project root. The initial
@@ -88,12 +89,13 @@ func newServer(ctx context.Context, rootDir string, cancel context.CancelFunc) (
 	lspSvc := lsp.NewService(absRoot, pm)
 
 	srv := &Server{
-		rootDir: absRoot,
-		store:   store,
-		sc:      sc,
-		lspSvc:  lspSvc,
-		status:  IndexStatusIdle,
-		done:    make(chan struct{}),
+		rootDir:   absRoot,
+		store:     store,
+		sc:        sc,
+		lspSvc:    lspSvc,
+		status:    IndexStatusIdle,
+		done:      make(chan struct{}),
+		closeOnce: &sync.Once{},
 	}
 
 	// Start initial full index in the background.
@@ -170,8 +172,9 @@ func (srv *Server) ForceIndex(ctx context.Context) error {
 		srv.mu.Unlock()
 		return fmt.Errorf("codemapserver: index already in progress")
 	}
-	// Reset the done channel for callers waiting on WaitForIndex.
+	// Reset the done channel and its Once for callers waiting on WaitForIndex.
 	srv.done = make(chan struct{})
+	srv.closeOnce = &sync.Once{}
 	srv.mu.Unlock()
 
 	go srv.runIndex(ctx)
@@ -184,6 +187,8 @@ func (srv *Server) runIndex(ctx context.Context) {
 	srv.status = IndexStatusInProgress
 	srv.startedAt = time.Now()
 	srv.indexErr = nil
+	done := srv.done      // capture before releasing the lock
+	once := srv.closeOnce // capture the Once paired with this channel
 	srv.mu.Unlock()
 
 	err := srv.doIndex(ctx)
@@ -196,10 +201,9 @@ func (srv *Server) runIndex(ctx context.Context) {
 	} else {
 		srv.status = IndexStatusReady
 	}
-	done := srv.done
 	srv.mu.Unlock()
 
-	close(done)
+	once.Do(func() { close(done) })
 }
 
 // doIndex runs the actual scan + enrich + store cycle.

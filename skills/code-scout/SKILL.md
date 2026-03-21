@@ -24,11 +24,14 @@ Add `--project <dir>` to any command to target a specific project directory inst
 
 ## Prerequisites
 
-The daemon builds the index on first run and keeps it up to date as files change. Always start it at the beginning of a session — if it is already running it will print a message and exit cleanly without spawning a duplicate:
+The daemon builds the index on first run and keeps it up to date as files change. Always start it at the beginning of a session. The command returns immediately — the daemon runs in the background:
 
 ```
 context0 codemap watch --project <dir>
 ```
+
+Output on success: `Watcher started, PIDFILE: <path>`
+Output if already running: `codemap daemon is already running, PIDFILE: <path>`
 
 The daemon auto-stops after 5 minutes of file inactivity. Simply run `watch` again if you resume after a long break.
 
@@ -45,7 +48,7 @@ The daemon auto-stops after 5 minutes of file inactivity. Simply run `watch` aga
    ```
    context0 codemap status
    ```
-   Wait if status is `InProgress`.
+   `watch` returns immediately — the daemon indexes in the background. Wait and retry `status` if it reports `InProgress` or no index yet.
 
 3. List symbols in a specific file to understand its structure:
    ```
@@ -97,7 +100,7 @@ The index is built in two phases:
 1. **Tree-sitter scan** — fast, offline; extracts symbol nodes from AST
 2. **LSP enrichment** — extracts cross-reference edges using `gopls`, `pylsp`, `typescript-language-server`, or `lua-language-server`
 
-LSP binaries are resolved automatically: cache (`~/.context0/bin/`) → `PATH` → auto-download.
+LSP binaries are resolved automatically: `PATH` → cache (`~/.context0/bin/`) → auto-download.
 
 ## Tips
 

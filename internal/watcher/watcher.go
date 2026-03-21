@@ -32,6 +32,8 @@ var skipDirs = map[string]struct{}{
 	"node_modules": {},
 	"__pycache__":  {},
 	".git":         {},
+	"zig-cache":    {},
+	"zig-out":      {},
 }
 
 // Handler is the callback type for per-file re-index events.

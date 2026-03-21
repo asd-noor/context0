@@ -150,8 +150,7 @@ func (e *Engine) SearchAgendas(query string, limit int) ([]Agenda, error) {
 		safe, limit,
 	)
 	if err != nil {
-		// FTS5 can fail on bad query; return empty.
-		return nil, nil //nolint:nilerr
+		return nil, err
 	}
 	defer rows.Close()
 

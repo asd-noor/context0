@@ -20,6 +20,8 @@ type Node struct {
 	LineEnd   int
 	ColStart  int
 	ColEnd    int
+	NameLine  int    // line of the name identifier (1-indexed); used for LSP position
+	NameCol   int    // column of the name identifier (1-indexed); used for LSP position
 	SymbolURI string // LSP file:// URI, populated during LSP enrichment
 }
 

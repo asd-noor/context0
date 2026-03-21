@@ -63,7 +63,7 @@ context0 memory delete 42
 ## Storage details
 
 - Database: `~/.context0/<project>/memory.sqlite`
-- Embedding model: `BAAI/bge-small-en-v1.5` (384-dim) via LM Studio / Ollama at `http://localhost:1234`
+- Embedding model: `qllama/bge-small-en-v1.5` (384-dim) via Ollama at `http://localhost:11434` (LM Studio also supported)
 - Overridable via `CTX0_EMBED_ENDPOINT` and `CTX0_EMBED_MODEL` environment variables
 - Every `memory save` call requires the embedding server to be reachable — the call fails cleanly if it is not
 

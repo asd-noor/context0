@@ -71,6 +71,7 @@ func newCreateCmd(projectDir *string) *cobra.Command {
 	cmd.Flags().StringVarP(&title, "title", "t", "", "Agenda title")
 	cmd.Flags().StringVarP(&description, "description", "d", "", "Agenda description")
 	cmd.Flags().StringArrayVarP(&taskDetails, "task", "T", nil, "Task details (repeat for multiple tasks)")
+	cmd.Flags().BoolSliceVar(&taskOptional, "task-optional", nil, "Mark corresponding task as optional (repeat to match --task order)")
 	return cmd
 }
 

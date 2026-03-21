@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS nodes (
     line_end   INTEGER NOT NULL,
     col_start  INTEGER NOT NULL,
     col_end    INTEGER NOT NULL,
+    name_line  INTEGER NOT NULL DEFAULT 0,
+    name_col   INTEGER NOT NULL DEFAULT 0,
     symbol_uri TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -90,7 +92,7 @@ func OpenReadOnly(projectPath string) (*Store, error) {
 		return nil, ErrNotIndexed
 	}
 
-	db, err := sql.Open("sqlite3", dbPath+"?mode=ro&_foreign_keys=on&_journal_mode=WAL")
+	db, err := sql.Open("sqlite3", dbPath+"?mode=ro&_foreign_keys=on")
 	if err != nil {
 		return nil, fmt.Errorf("graph: open db: %w", err)
 	}
@@ -100,18 +102,6 @@ func OpenReadOnly(projectPath string) (*Store, error) {
 
 // Close closes the underlying database connection.
 func (s *Store) Close() error { return s.db.Close() }
-
-// UpsertNode inserts or replaces a single node.
-func (s *Store) UpsertNode(ctx context.Context, n Node) error {
-	_, err := s.db.ExecContext(ctx,
-		`INSERT OR REPLACE INTO nodes
-		 (id, name, kind, file_path, line_start, line_end, col_start, col_end, symbol_uri)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		n.ID, n.Name, n.Kind, n.FilePath,
-		n.LineStart, n.LineEnd, n.ColStart, n.ColEnd, n.SymbolURI,
-	)
-	return err
-}
 
 // BulkUpsertNodes inserts or replaces a batch of nodes inside a single transaction.
 func (s *Store) BulkUpsertNodes(ctx context.Context, nodes []Node) error {
@@ -126,8 +116,8 @@ func (s *Store) BulkUpsertNodes(ctx context.Context, nodes []Node) error {
 
 	stmt, err := tx.PrepareContext(ctx,
 		`INSERT OR REPLACE INTO nodes
-		 (id, name, kind, file_path, line_start, line_end, col_start, col_end, symbol_uri)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 (id, name, kind, file_path, line_start, line_end, col_start, col_end, name_line, name_col, symbol_uri)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return err
@@ -137,21 +127,12 @@ func (s *Store) BulkUpsertNodes(ctx context.Context, nodes []Node) error {
 	for _, n := range nodes {
 		if _, err := stmt.ExecContext(ctx,
 			n.ID, n.Name, n.Kind, n.FilePath,
-			n.LineStart, n.LineEnd, n.ColStart, n.ColEnd, n.SymbolURI,
+			n.LineStart, n.LineEnd, n.ColStart, n.ColEnd, n.NameLine, n.NameCol, n.SymbolURI,
 		); err != nil {
 			return err
 		}
 	}
 	return tx.Commit()
-}
-
-// UpsertEdge inserts or ignores a single edge.
-func (s *Store) UpsertEdge(ctx context.Context, e Edge) error {
-	_, err := s.db.ExecContext(ctx,
-		`INSERT OR IGNORE INTO edges (source_id, target_id, relation) VALUES (?, ?, ?)`,
-		e.SourceID, e.TargetID, e.Relation,
-	)
-	return err
 }
 
 // BulkUpsertEdges inserts or ignores a batch of edges inside a single transaction.
@@ -184,7 +165,7 @@ func (s *Store) BulkUpsertEdges(ctx context.Context, edges []Edge) error {
 // GetSymbolsInFile returns all nodes for the given file path, ordered by line_start.
 func (s *Store) GetSymbolsInFile(ctx context.Context, filePath string) ([]Node, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, kind, file_path, line_start, line_end, col_start, col_end, COALESCE(symbol_uri,'')
+		`SELECT id, name, kind, file_path, line_start, line_end, col_start, col_end, name_line, name_col, COALESCE(symbol_uri,'')
 		 FROM nodes WHERE file_path = ? ORDER BY line_start`,
 		filePath,
 	)
@@ -198,7 +179,7 @@ func (s *Store) GetSymbolsInFile(ctx context.Context, filePath string) ([]Node, 
 // GetSymbolLocation returns all nodes matching the given name, ordered by file_path.
 func (s *Store) GetSymbolLocation(ctx context.Context, name string) ([]Node, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, kind, file_path, line_start, line_end, col_start, col_end, COALESCE(symbol_uri,'')
+		`SELECT id, name, kind, file_path, line_start, line_end, col_start, col_end, name_line, name_col, COALESCE(symbol_uri,'')
 		 FROM nodes WHERE name = ? ORDER BY file_path`,
 		name,
 	)
@@ -213,7 +194,7 @@ func (s *Store) GetSymbolLocation(ctx context.Context, name string) ([]Node, err
 // "Smallest" means the node with the smallest (line_end - line_start) span.
 func (s *Store) FindNode(ctx context.Context, filePath string, line, col int) (*Node, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, name, kind, file_path, line_start, line_end, col_start, col_end, COALESCE(symbol_uri,'')
+		`SELECT id, name, kind, file_path, line_start, line_end, col_start, col_end, name_line, name_col, COALESCE(symbol_uri,'')
 		 FROM nodes
 		 WHERE file_path = ?
 		   AND line_start <= ?
@@ -224,7 +205,7 @@ func (s *Store) FindNode(ctx context.Context, filePath string, line, col int) (*
 	)
 	n := &Node{}
 	err := row.Scan(&n.ID, &n.Name, &n.Kind, &n.FilePath,
-		&n.LineStart, &n.LineEnd, &n.ColStart, &n.ColEnd, &n.SymbolURI)
+		&n.LineStart, &n.LineEnd, &n.ColStart, &n.ColEnd, &n.NameLine, &n.NameCol, &n.SymbolURI)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -249,6 +230,7 @@ func (s *Store) FindImpact(ctx context.Context, symbolName string) ([]Node, erro
 		)
 		SELECT DISTINCT n.id, n.name, n.kind, n.file_path,
 		                n.line_start, n.line_end, n.col_start, n.col_end,
+		                n.name_line, n.name_col,
 		                COALESCE(n.symbol_uri,'')
 		FROM nodes n
 		JOIN impacted i ON n.id = i.source_id`,
@@ -324,7 +306,7 @@ func scanNodes(rows *sql.Rows) ([]Node, error) {
 	for rows.Next() {
 		var n Node
 		if err := rows.Scan(&n.ID, &n.Name, &n.Kind, &n.FilePath,
-			&n.LineStart, &n.LineEnd, &n.ColStart, &n.ColEnd, &n.SymbolURI); err != nil {
+			&n.LineStart, &n.LineEnd, &n.ColStart, &n.ColEnd, &n.NameLine, &n.NameCol, &n.SymbolURI); err != nil {
 			return nil, err
 		}
 		nodes = append(nodes, n)

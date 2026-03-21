@@ -43,6 +43,7 @@ var languageServers = []langServer{
 	{langID: "javascript", binary: "typescript-language-server", args: []string{"--stdio"}},
 	{langID: "typescript", binary: "typescript-language-server", args: []string{"--stdio"}},
 	{langID: "lua", binary: "lua-language-server", args: []string{"--stdio"}},
+	{langID: "zig", binary: "zls", args: nil},
 }
 
 // extToLangID maps file extensions to language IDs.
@@ -54,6 +55,7 @@ var extToLangID = map[string]string{
 	".ts":  "typescript",
 	".tsx": "typescript",
 	".lua": "lua",
+	".zig": "zig",
 }
 
 // Client is a persistent LSP subprocess client for one language server.
@@ -120,29 +122,48 @@ func (c *Client) send(ctx context.Context, method string, params any, result any
 		return err
 	}
 
-	// Read responses until we find the one matching our ID.
-	deadline, ok := ctx.Deadline()
-	if !ok {
-		deadline = time.Now().Add(callTimeout)
+	// Ensure the context has a deadline; if not, impose callTimeout.
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, callTimeout)
+		defer cancel()
 	}
-	_ = deadline
+
+	// Read responses until we find the one matching our ID.
+	// ReadMessage blocks on a bufio.Reader (pipe), so we run it in a goroutine
+	// and select against ctx.Done() to honour the deadline.
+	type readResult struct {
+		resp ResponseMessage
+		err  error
+	}
 
 	for {
-		var resp ResponseMessage
-		if err := ReadMessage(c.reader, &resp); err != nil {
-			return err
+		ch := make(chan readResult, 1)
+		go func() {
+			var resp ResponseMessage
+			err := ReadMessage(c.reader, &resp)
+			ch <- readResult{resp, err}
+		}()
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("lsp: %s timed out: %w", method, ctx.Err())
+		case r := <-ch:
+			if r.err != nil {
+				return r.err
+			}
+			if r.resp.ID == nil || *r.resp.ID != id {
+				continue // notification or different response — skip
+			}
+			if r.resp.Error != nil {
+				return fmt.Errorf("lsp: %s error %d: %s", method, r.resp.Error.Code, r.resp.Error.Message)
+			}
+			if result != nil && r.resp.Result != nil {
+				b, _ := json.Marshal(r.resp.Result)
+				return json.Unmarshal(b, result)
+			}
+			return nil
 		}
-		if resp.ID == nil || *resp.ID != id {
-			continue // notification or different response — skip
-		}
-		if resp.Error != nil {
-			return fmt.Errorf("lsp: %s error %d: %s", method, resp.Error.Code, resp.Error.Message)
-		}
-		if result != nil && resp.Result != nil {
-			b, _ := json.Marshal(resp.Result)
-			return json.Unmarshal(b, result)
-		}
-		return nil
 	}
 }
 
@@ -284,7 +305,7 @@ func (s *Service) getClient(ctx context.Context, langID string) (*Client, error)
 		return nil, fmt.Errorf("lsp: no server for language %q", langID)
 	}
 
-	// Resolve binary: pkgmgr cache → PATH → auto-download.
+	// Resolve binary: PATH → pkgmgr cache → auto-download.
 	binary, err := s.pm.ResolveBinary(ctx, spec.binary)
 	if err != nil {
 		return nil, fmt.Errorf("lsp: resolve %s: %w", spec.binary, err)
@@ -296,12 +317,6 @@ func (s *Service) getClient(ctx context.Context, langID string) (*Client, error)
 	}
 	s.clients[langID] = c
 	return c, nil
-}
-
-// enrichWork is a unit of work for the enrichment worker pool.
-type enrichWork struct {
-	node graph.Node
-	text string // file contents, pre-loaded
 }
 
 // Enrich takes the nodes produced by the scanner, queries each language server
@@ -391,10 +406,12 @@ func (s *Service) enrichNode(ctx context.Context, c *Client, langID string, n gr
 		c.mu.Unlock()
 	}()
 
-	// Use the start position of the node (0-indexed for LSP).
+	// Use the position of the name identifier (0-indexed for LSP).
+	// NameLine/NameCol point at the symbol name token, which gopls requires
+	// for textDocument/references to return results (not the declaration keyword).
 	pos := Position{
-		Line:      n.LineStart - 1,
-		Character: n.ColStart - 1,
+		Line:      n.NameLine - 1,
+		Character: n.NameCol - 1,
 	}
 
 	var edges []graph.Edge

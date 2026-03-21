@@ -217,8 +217,7 @@ func (e *Engine) queryFTS(query string, limit int) ([]int64, error) {
 		safe, limit,
 	)
 	if err != nil {
-		// FTS5 match can fail if query contains special chars; return empty instead.
-		return nil, nil //nolint:nilerr
+		return nil, err
 	}
 	defer rows.Close()
 

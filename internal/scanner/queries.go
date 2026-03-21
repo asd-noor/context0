@@ -82,4 +82,9 @@ var queries = map[string]string{
     (variable_list (identifier) @name)
     (expression_list (function_definition))) @definition.function
 `,
+
+	"zig": `
+(function_declaration
+    name: (identifier) @name) @definition.function
+`,
 }

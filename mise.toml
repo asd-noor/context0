@@ -1,0 +1,6 @@
+[tools]
+go = "1.26.1"
+
+[env]
+MISE_GO_SET_GOROOT = true
+GOPATH = "/Users/noor/.local/gopath/1.26.1"

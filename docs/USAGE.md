@@ -111,7 +111,12 @@ By default, only active agendas are shown. Use `--all` to include completed (ina
 context0 agenda get <id>
 ```
 
-Shows the full agenda with all tasks, their completion status, and acceptance criteria.
+Shows the full agenda with all tasks, their status, and acceptance criteria.
+
+Task status symbols:
+- `[ ]` — pending (not yet started)
+- `[→]` — in progress (actively being worked on)
+- `[x]` — completed
 
 Output:
 ```
@@ -122,11 +127,26 @@ Agenda #5 [active]
   Tasks (3):
     [ ] #1: Create JWT validation in internal/auth
          Done when: go vet and go test pass
-    [ ] #2: Add middleware to router
+    [→] #2: Add middleware to router
          Done when: Protected routes return 401 without token
-    [ ] #3: Update API docs
+    [x] #3: Update API docs
          Done when: README documents auth header format
 ```
+
+### Mark a task as in-progress
+
+```
+context0 agenda task start <agenda-id> <task-number>
+```
+
+Marks the task as actively in progress. The agenda remains active.
+
+Example:
+```
+context0 agenda task start 5 2
+```
+
+Output: `agenda 5: task 2 marked as in_progress`
 
 ### Mark a task done
 
@@ -145,13 +165,15 @@ context0 agenda task done 5 1
 
 Output: `agenda 5: task 1 marked as completed`
 
-When all required (non-optional) tasks are complete, the agenda is automatically deactivated.
+When all required (non-optional) tasks are completed, the agenda is automatically deactivated.
 
 ### Reopen a task
 
 ```
 context0 agenda task reopen <agenda-id> <task-number>
 ```
+
+Resets a task to `pending`. Tasks can be reopened from any status (in_progress or completed).
 
 ### Search agendas
 

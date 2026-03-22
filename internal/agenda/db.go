@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     details          TEXT    NOT NULL,
     acceptance_guard TEXT,
     is_completed     INTEGER NOT NULL DEFAULT 0,
+    status           TEXT    NOT NULL DEFAULT 'pending',
     FOREIGN KEY (agenda_id) REFERENCES agendas(id) ON DELETE CASCADE
 );
 
@@ -60,7 +61,8 @@ END;
 `
 
 // Open opens (or creates) the agenda SQLite database for the given project
-// directory, applies the schema, and returns the db handle.
+// directory, applies the schema, runs any pending migrations, and returns
+// the db handle.
 func Open(projectPath string) (*sql.DB, error) {
 	dbPath, err := dbutil.DBPath(projectPath, "agenda.sqlite")
 	if err != nil {
@@ -77,5 +79,70 @@ func Open(projectPath string) (*sql.DB, error) {
 		return nil, fmt.Errorf("agenda: apply schema: %w", err)
 	}
 
+	if err := migrateSchema(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("agenda: migrate schema: %w", err)
+	}
+
 	return db, nil
+}
+
+// migrateSchema applies incremental schema migrations to existing databases.
+// It is safe to run on both new and existing databases; each migration is
+// idempotent.
+func migrateSchema(db *sql.DB) error {
+	// Migration 1: add `status` column to tasks (for databases created before
+	// this field was introduced) and backfill from the legacy is_completed flag.
+	if err := addStatusColumn(db); err != nil {
+		return fmt.Errorf("migration add_status_column: %w", err)
+	}
+	return nil
+}
+
+// addStatusColumn adds the `status` TEXT column to the tasks table if it does
+// not already exist, then backfills rows that still carry the legacy
+// is_completed value but have not been assigned a status yet.
+func addStatusColumn(db *sql.DB) error {
+	// Check whether the column already exists via PRAGMA table_info.
+	rows, err := db.Query(`PRAGMA table_info(tasks)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	hasStatus := false
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull, pk int
+		var dflt interface{}
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == "status" {
+			hasStatus = true
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	if !hasStatus {
+		// Add column with safe default so existing rows become 'pending'.
+		if _, err := db.Exec(
+			`ALTER TABLE tasks ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'`,
+		); err != nil {
+			return fmt.Errorf("alter table add status: %w", err)
+		}
+
+		// Backfill: rows that were previously completed via the boolean flag.
+		if _, err := db.Exec(
+			`UPDATE tasks SET status = 'completed' WHERE is_completed = 1`,
+		); err != nil {
+			return fmt.Errorf("backfill status from is_completed: %w", err)
+		}
+	}
+
+	return nil
 }

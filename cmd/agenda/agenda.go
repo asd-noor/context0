@@ -129,6 +129,22 @@ func newListCmd(projectDir *string) *cobra.Command {
 
 // --- get ---
 
+// taskStatusSymbol returns the display symbol for a task's status.
+//
+//	pending    → [ ]
+//	in_progress → [→]
+//	completed  → [x]
+func taskStatusSymbol(s agenda.TaskStatus) string {
+	switch s {
+	case agenda.StatusInProgress:
+		return "[→]"
+	case agenda.StatusCompleted:
+		return "[x]"
+	default:
+		return "[ ]"
+	}
+}
+
 func newGetCmd(projectDir *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "get <id>",
@@ -161,15 +177,12 @@ func newGetCmd(projectDir *string) *cobra.Command {
 			fmt.Printf("  Created    : %s\n", a.CreatedAt.Format("2006-01-02 15:04:05"))
 			fmt.Printf("  Tasks (%d):\n", len(a.Tasks))
 			for _, t := range a.Tasks {
-				done := "[ ]"
-				if t.IsCompleted {
-					done = "[x]"
-				}
+				symbol := taskStatusSymbol(t.Status)
 				opt := ""
 				if t.IsOptional {
 					opt = " (optional)"
 				}
-				fmt.Printf("    %s #%d%s: %s\n", done, t.TaskOrder+1, opt, t.Details)
+				fmt.Printf("    %s #%d%s: %s\n", symbol, t.TaskOrder+1, opt, t.Details)
 				if t.AcceptanceGuard != "" {
 					fmt.Printf("         Done when: %s\n", t.AcceptanceGuard)
 				}
@@ -233,8 +246,21 @@ func newTaskCmd(projectDir *string) *cobra.Command {
 		Use:   "task",
 		Short: "Manage individual tasks",
 	}
-	cmd.AddCommand(newTaskDoneCmd(projectDir), newTaskReopenCmd(projectDir))
+	cmd.AddCommand(
+		newTaskStartCmd(projectDir),
+		newTaskDoneCmd(projectDir),
+		newTaskReopenCmd(projectDir),
+	)
 	return cmd
+}
+
+func newTaskStartCmd(projectDir *string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "start <agenda-id> <task-number>",
+		Short: "Mark a task as in-progress",
+		Args:  cobra.ExactArgs(2),
+		RunE:  taskStateCmd(projectDir, agenda.StatusInProgress),
+	}
 }
 
 func newTaskDoneCmd(projectDir *string) *cobra.Command {
@@ -242,7 +268,7 @@ func newTaskDoneCmd(projectDir *string) *cobra.Command {
 		Use:   "done <agenda-id> <task-number>",
 		Short: "Mark a task as completed",
 		Args:  cobra.ExactArgs(2),
-		RunE:  taskStateCmd(projectDir, true),
+		RunE:  taskStateCmd(projectDir, agenda.StatusCompleted),
 	}
 }
 
@@ -251,11 +277,11 @@ func newTaskReopenCmd(projectDir *string) *cobra.Command {
 		Use:   "reopen <agenda-id> <task-number>",
 		Short: "Mark a task as pending",
 		Args:  cobra.ExactArgs(2),
-		RunE:  taskStateCmd(projectDir, false),
+		RunE:  taskStateCmd(projectDir, agenda.StatusPending),
 	}
 }
 
-func taskStateCmd(projectDir *string, done bool) func(cmd *cobra.Command, args []string) error {
+func taskStateCmd(projectDir *string, status agenda.TaskStatus) func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		agendaID, err := strconv.ParseInt(args[0], 10, 64)
 		if err != nil {
@@ -275,14 +301,10 @@ func taskStateCmd(projectDir *string, done bool) func(cmd *cobra.Command, args [
 		}
 		defer eng.Close()
 
-		if err := eng.UpdateTaskByOrder(agendaID, taskNum-1, done); err != nil {
+		if err := eng.UpdateTaskByOrder(agendaID, taskNum-1, status); err != nil {
 			return err
 		}
-		state := "completed"
-		if !done {
-			state = "pending"
-		}
-		fmt.Printf("agenda %d: task %d marked as %s\n", agendaID, taskNum, state)
+		fmt.Printf("agenda %d: task %d marked as %s\n", agendaID, taskNum, status)
 		return nil
 	}
 }

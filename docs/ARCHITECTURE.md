@@ -134,18 +134,23 @@ Both search legs over-fetch by 5x before fusion to reduce rank cutoff bias. The 
 ```sql
 agendas     (id INTEGER PK, is_active BOOL, title TEXT, description TEXT, created_at DATETIME)
 tasks       (id INTEGER PK, agenda_id FK, task_order INT, is_optional BOOL,
-             details TEXT, acceptance_guard TEXT, is_completed BOOL)
+             details TEXT, acceptance_guard TEXT, is_completed INT, status TEXT)
 agendas_fts USING fts5(title, description, content='agendas')
 ```
+
+`status` is the canonical task state: `pending` | `in_progress` | `completed`. The legacy `is_completed` integer column is kept for backwards compatibility and is kept in sync with `status` on every write (`completed` → 1, everything else → 0).
+
+**Schema migration**: On open, `Open()` runs `migrateSchema()` which detects absence of the `status` column via `PRAGMA table_info(tasks)` and adds it, backfilling `completed` from rows where `is_completed=1`. This is safe to run on both new and existing databases.
 
 Tasks cascade on agenda delete. FTS5 is trigger-maintained.
 
 ### Key behaviours
 
-- **Auto-deactivation**: when a task is marked complete, the engine checks if all non-optional tasks for the agenda are done. If so, `is_active` is set to false.
+- **Auto-deactivation**: when a task status is updated, the engine checks if all non-optional tasks for the agenda have `status = 'completed'`. If so, `is_active` is set to false. Tasks with status `in_progress` or `pending` keep the agenda active.
 - **Active guard on delete**: active agendas cannot be deleted.
 - **Scoped task numbering**: tasks are displayed and addressed by 1-based order within their agenda (e.g. `task done 5 2` = agenda 5, task #2), not by global database ID.
 - **Acceptance guards**: each task can have a "Done when:" condition. Agents should verify this condition before marking the task complete.
+- **Task lifecycle**: `pending` → `in_progress` → `completed` (and back via `reopen`). Any transition between states is permitted.
 - **No embeddings**: search is FTS5-only. Agenda queries are keyword-oriented, making vector search unnecessary.
 
 ---

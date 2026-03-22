@@ -3,9 +3,13 @@ go = "1.26.1"
 
 [env]
 MISE_GO_SET_GOROOT = true
-GOPATH = "/Users/noor/.local/gopath/1.26.1"
+
+[env.GOCACHE]
+value = "{{config_root}}/.gocache"
+
+[env.GOPATH]
+value = "{{env.HOME}}/.local/gopath/1.26.1"
 
 [tasks.build]
 description = "Build context0 binary with FTS5 and sqlite-vec support"
 run = "CGO_ENABLED=1 go build -tags fts5 -o context0 ."
-

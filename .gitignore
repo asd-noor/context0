@@ -1,0 +1,18 @@
+# Project-local Go caches (not to be committed)
+.gopath/
+.gocache/
+.gomodcache/
+.mise-cache/
+
+# Local mise state
+.mise/
+
+# Build output (optional)
+/context0
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

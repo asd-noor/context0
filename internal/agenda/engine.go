@@ -7,6 +7,27 @@ import (
 	"time"
 )
 
+// TaskStatus represents the lifecycle state of a task.
+type TaskStatus string
+
+const (
+	// StatusPending is the initial state of every task.
+	StatusPending TaskStatus = "pending"
+	// StatusInProgress indicates the task is actively being worked on.
+	StatusInProgress TaskStatus = "in_progress"
+	// StatusCompleted indicates the task has been finished.
+	StatusCompleted TaskStatus = "completed"
+)
+
+// IsValid reports whether s is a recognised task status.
+func (s TaskStatus) IsValid() bool {
+	switch s {
+	case StatusPending, StatusInProgress, StatusCompleted:
+		return true
+	}
+	return false
+}
+
 // Agenda represents a named plan with an ordered list of tasks.
 type Agenda struct {
 	ID          int64     `json:"id"`
@@ -19,13 +40,13 @@ type Agenda struct {
 
 // Task is a single step within an Agenda.
 type Task struct {
-	ID              int64  `json:"id"`
-	AgendaID        int64  `json:"agenda_id"`
-	TaskOrder       int    `json:"task_order"`
-	IsOptional      bool   `json:"is_optional"`
-	Details         string `json:"details"`
-	AcceptanceGuard string `json:"acceptance_guard,omitempty"`
-	IsCompleted     bool   `json:"is_completed"`
+	ID              int64      `json:"id"`
+	AgendaID        int64      `json:"agenda_id"`
+	TaskOrder       int        `json:"task_order"`
+	IsOptional      bool       `json:"is_optional"`
+	Details         string     `json:"details"`
+	AcceptanceGuard string     `json:"acceptance_guard,omitempty"`
+	Status          TaskStatus `json:"status"`
 }
 
 // TaskInput is the DTO used to create a new task.
@@ -77,9 +98,9 @@ func (e *Engine) CreateAgenda(title, description string, tasks []TaskInput) (int
 
 	for i, t := range tasks {
 		if _, err := tx.Exec(
-			`INSERT INTO tasks (agenda_id, task_order, is_optional, details, acceptance_guard)
-			 VALUES (?, ?, ?, ?, ?)`,
-			agendaID, i, boolToInt(t.IsOptional), t.Details, t.AcceptanceGuard,
+			`INSERT INTO tasks (agenda_id, task_order, is_optional, details, acceptance_guard, status)
+			 VALUES (?, ?, ?, ?, ?, ?)`,
+			agendaID, i, boolToInt(t.IsOptional), t.Details, t.AcceptanceGuard, string(StatusPending),
 		); err != nil {
 			return 0, fmt.Errorf("create_agenda: insert task %d: %w", i, err)
 		}
@@ -167,9 +188,14 @@ func (e *Engine) SearchAgendas(query string, limit int) ([]Agenda, error) {
 	return agendas, rows.Err()
 }
 
-// UpdateTaskByOrder sets the is_completed flag for a task identified by
-// agenda ID and 0-based task order, then runs auto-deactivation.
-func (e *Engine) UpdateTaskByOrder(agendaID int64, taskOrder int, isCompleted bool) error {
+// UpdateTaskByOrder sets the status for a task identified by agenda ID and
+// 0-based task order, then runs auto-deactivation.
+//
+// status must be one of StatusPending, StatusInProgress, or StatusCompleted.
+func (e *Engine) UpdateTaskByOrder(agendaID int64, taskOrder int, status TaskStatus) error {
+	if !status.IsValid() {
+		return fmt.Errorf("update_task: invalid status %q (want pending|in_progress|completed)", status)
+	}
 	var taskID int64
 	err := e.db.QueryRow(
 		`SELECT id FROM tasks WHERE agenda_id=? AND task_order=?`,
@@ -178,11 +204,17 @@ func (e *Engine) UpdateTaskByOrder(agendaID int64, taskOrder int, isCompleted bo
 	if err != nil {
 		return fmt.Errorf("update_task: no task at order %d in agenda %d: %w", taskOrder, agendaID, err)
 	}
-	return e.UpdateTask(taskID, isCompleted)
+	return e.UpdateTask(taskID, status)
 }
 
-// UpdateTask sets the is_completed flag for a task and runs auto-deactivation.
-func (e *Engine) UpdateTask(taskID int64, isCompleted bool) error {
+// UpdateTask sets the status for a task and runs auto-deactivation.
+//
+// status must be one of StatusPending, StatusInProgress, or StatusCompleted.
+func (e *Engine) UpdateTask(taskID int64, status TaskStatus) error {
+	if !status.IsValid() {
+		return fmt.Errorf("update_task: invalid status %q (want pending|in_progress|completed)", status)
+	}
+
 	tx, err := e.db.Begin()
 	if err != nil {
 		return fmt.Errorf("update_task: begin tx: %w", err)
@@ -195,17 +227,20 @@ func (e *Engine) UpdateTask(taskID int64, isCompleted bool) error {
 		return fmt.Errorf("update_task: find task: %w", err)
 	}
 
+	// Persist new status; keep legacy is_completed in sync for external readers.
+	isCompleted := boolToInt(status == StatusCompleted)
 	if _, err := tx.Exec(
-		`UPDATE tasks SET is_completed=? WHERE id=?`,
-		boolToInt(isCompleted), taskID,
+		`UPDATE tasks SET status=?, is_completed=? WHERE id=?`,
+		string(status), isCompleted, taskID,
 	); err != nil {
 		return fmt.Errorf("update_task: update: %w", err)
 	}
 
-	// Auto-deactivation: if all required tasks are completed, mark agenda inactive.
+	// Auto-deactivation: deactivate the agenda when every required task is
+	// completed. Tasks that are in_progress or pending keep the agenda active.
 	var incomplete int
 	if err := tx.QueryRow(
-		`SELECT COUNT(*) FROM tasks WHERE agenda_id=? AND is_optional=0 AND is_completed=0`,
+		`SELECT COUNT(*) FROM tasks WHERE agenda_id=? AND is_optional=0 AND status != 'completed'`,
 		agendaID,
 	).Scan(&incomplete); err != nil {
 		return fmt.Errorf("update_task: check completion: %w", err)
@@ -264,9 +299,9 @@ func (e *Engine) UpdateAgenda(id int64, title, description string, isActive *boo
 		}
 		for i, t := range newTasks {
 			if _, err := tx.Exec(
-				`INSERT INTO tasks (agenda_id, task_order, is_optional, details, acceptance_guard)
-				 VALUES (?, ?, ?, ?, ?)`,
-				id, maxOrder+i, boolToInt(t.IsOptional), t.Details, t.AcceptanceGuard,
+				`INSERT INTO tasks (agenda_id, task_order, is_optional, details, acceptance_guard, status)
+				 VALUES (?, ?, ?, ?, ?, ?)`,
+				id, maxOrder+i, boolToInt(t.IsOptional), t.Details, t.AcceptanceGuard, string(StatusPending),
 			); err != nil {
 				return fmt.Errorf("update_agenda: insert new task %d: %w", i, err)
 			}
@@ -313,7 +348,7 @@ func (e *Engine) getAgendaRow(id int64) (*Agenda, error) {
 
 func (e *Engine) getTasksForAgenda(agendaID int64) ([]Task, error) {
 	rows, err := e.db.Query(
-		`SELECT id, agenda_id, task_order, is_optional, details, acceptance_guard, is_completed
+		`SELECT id, agenda_id, task_order, is_optional, details, acceptance_guard, status
 		 FROM tasks WHERE agenda_id=? ORDER BY task_order`,
 		agendaID,
 	)
@@ -325,14 +360,15 @@ func (e *Engine) getTasksForAgenda(agendaID int64) ([]Task, error) {
 	var tasks []Task
 	for rows.Next() {
 		var t Task
-		var isOptional, isCompleted int
+		var isOptional int
+		var statusStr string
 		if err := rows.Scan(
-			&t.ID, &t.AgendaID, &t.TaskOrder, &isOptional, &t.Details, &t.AcceptanceGuard, &isCompleted,
+			&t.ID, &t.AgendaID, &t.TaskOrder, &isOptional, &t.Details, &t.AcceptanceGuard, &statusStr,
 		); err != nil {
 			return nil, err
 		}
 		t.IsOptional = isOptional == 1
-		t.IsCompleted = isCompleted == 1
+		t.Status = TaskStatus(statusStr)
 		tasks = append(tasks, t)
 	}
 	return tasks, rows.Err()

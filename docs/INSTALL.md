@@ -103,10 +103,10 @@ All per-project data is stored under:
 ~/.context0/<transformed-project-path>/
 ```
 
-The project path is transformed by replacing path separators with `;`:
+The project path is transformed by replacing path separators with `=`:
 
 ```
-/home/user/myproject  -->  ~/.context0/home;user;myproject/
+/home/user/myproject  -->  ~/.context0/home=user=myproject/
 ```
 
 Files stored per project:

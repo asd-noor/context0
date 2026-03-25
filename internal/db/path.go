@@ -10,7 +10,7 @@ import (
 
 // ProjectDir returns the path to the per-project context0 data directory.
 // The project directory path is transformed by replacing os.PathSeparator
-// with semicolons, matching the spec in AGENTS.md.
+// with equals signs, matching the spec in AGENTS.md.
 func ProjectDir(projectPath string) (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -22,10 +22,10 @@ func ProjectDir(projectPath string) (string, error) {
 		return "", err
 	}
 
-	// Replace path separators with semicolons.
-	transformed := strings.ReplaceAll(abs, string(os.PathSeparator), ";")
-	// Trim any leading semicolon that results from an absolute path starting with /.
-	transformed = strings.TrimPrefix(transformed, ";")
+	// Replace path separators with equals signs.
+	transformed := strings.ReplaceAll(abs, string(os.PathSeparator), "=")
+	// Trim any leading equals sign that results from an absolute path starting with /.
+	transformed = strings.TrimPrefix(transformed, "=")
 
 	dir := filepath.Join(home, ".context0", transformed)
 	if err := os.MkdirAll(dir, 0o755); err != nil {

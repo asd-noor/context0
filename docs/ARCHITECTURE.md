@@ -11,7 +11,7 @@ context0 (CLI binary)
   └── codemap  → codemap.sqlite   (relational graph)
 ```
 
-All databases are stored under `~/.context0/<project-path>/` where the project path has separators replaced by semicolons (e.g. `/home/user/project` becomes `home;user;project`).
+All databases are stored under `~/.context0/<project-path>/` where the project path has separators replaced by equals signs (e.g. `/home/user/project` becomes `home=user=project`).
 
 ## Tech stack
 

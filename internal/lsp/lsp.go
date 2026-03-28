@@ -60,15 +60,31 @@ var extToLangID = map[string]string{
 	".templ": "templ",
 }
 
+// incomingMessage is used internally to parse any LSP message from the server.
+// It covers both JSON-RPC responses and server-initiated notifications.
+type incomingMessage struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      *int            `json:"id,omitempty"`
+	Method  string          `json:"method,omitempty"`
+	Params  json.RawMessage `json:"params,omitempty"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *ResponseError  `json:"error,omitempty"`
+}
+
+// -------------------------------------------------------------------
+// Client
+// -------------------------------------------------------------------
+
 // Client is a persistent LSP subprocess client for one language server.
 type Client struct {
-	cmd     *exec.Cmd
-	stdin   io.WriteCloser
-	reader  *bufio.Reader
-	mu      sync.Mutex
-	nextID  atomic.Int32
-	rootURI string
-	startAt time.Time
+	cmd       *exec.Cmd
+	stdin     io.WriteCloser
+	reader    *bufio.Reader
+	mu        sync.Mutex
+	nextID    atomic.Int32
+	rootURI   string
+	startAt   time.Time
+	diagStore sync.Map // key: URI (string) → value: []Diagnostic
 }
 
 // newClient starts the given language server binary and performs the
@@ -111,7 +127,8 @@ func (c *Client) nextRequestID() int {
 }
 
 // send writes a JSON-RPC request and waits for the matching response.
-// The caller must hold c.mu.
+// While waiting, any textDocument/publishDiagnostics notifications that arrive
+// are captured in c.diagStore. The caller must hold c.mu.
 func (c *Client) send(ctx context.Context, method string, params any, result any) error {
 	id := c.nextRequestID()
 	req := RequestMessage{
@@ -135,16 +152,16 @@ func (c *Client) send(ctx context.Context, method string, params any, result any
 	// ReadMessage blocks on a bufio.Reader (pipe), so we run it in a goroutine
 	// and select against ctx.Done() to honour the deadline.
 	type readResult struct {
-		resp ResponseMessage
-		err  error
+		msg incomingMessage
+		err error
 	}
 
 	for {
 		ch := make(chan readResult, 1)
 		go func() {
-			var resp ResponseMessage
-			err := ReadMessage(c.reader, &resp)
-			ch <- readResult{resp, err}
+			var msg incomingMessage
+			err := ReadMessage(c.reader, &msg)
+			ch <- readResult{msg, err}
 		}()
 
 		select {
@@ -154,19 +171,54 @@ func (c *Client) send(ctx context.Context, method string, params any, result any
 			if r.err != nil {
 				return r.err
 			}
-			if r.resp.ID == nil || *r.resp.ID != id {
-				continue // notification or different response — skip
+			// Server-initiated notification (no ID field) — handle and keep reading.
+			if r.msg.ID == nil {
+				c.handleNotification(r.msg)
+				continue
 			}
-			if r.resp.Error != nil {
-				return fmt.Errorf("lsp: %s error %d: %s", method, r.resp.Error.Code, r.resp.Error.Message)
+			// Response for a different in-flight request — keep reading.
+			if *r.msg.ID != id {
+				continue
 			}
-			if result != nil && r.resp.Result != nil {
-				b, _ := json.Marshal(r.resp.Result)
-				return json.Unmarshal(b, result)
+			// Matched response.
+			if r.msg.Error != nil {
+				return fmt.Errorf("lsp: %s error %d: %s", method, r.msg.Error.Code, r.msg.Error.Message)
+			}
+			if result != nil && r.msg.Result != nil {
+				return json.Unmarshal(r.msg.Result, result)
 			}
 			return nil
 		}
 	}
+}
+
+// handleNotification dispatches a server-initiated notification.
+// Called inside the send loop while c.mu is held.
+func (c *Client) handleNotification(msg incomingMessage) {
+	if msg.Method != "textDocument/publishDiagnostics" || len(msg.Params) == 0 {
+		return
+	}
+	var p PublishDiagnosticsParams
+	if err := json.Unmarshal(msg.Params, &p); err != nil {
+		return
+	}
+	// Store the full diagnostic list for the URI, overwriting any previous value
+	// (the server always sends the complete current set for a file).
+	c.diagStore.Store(p.URI, p.Diagnostics)
+}
+
+// DrainDiagnostics returns every publishDiagnostics notification captured
+// during send calls and clears the internal cache. Keys are document URIs.
+func (c *Client) DrainDiagnostics() map[string][]Diagnostic {
+	out := make(map[string][]Diagnostic)
+	c.diagStore.Range(func(k, v any) bool {
+		uri, _ := k.(string)
+		diags, _ := v.([]Diagnostic)
+		out[uri] = diags
+		c.diagStore.Delete(k)
+		return true
+	})
+	return out
 }
 
 // notify sends a JSON-RPC notification (no response expected).
@@ -323,6 +375,8 @@ func (s *Service) getClient(ctx context.Context, langID string) (*Client, error)
 
 // Enrich takes the nodes produced by the scanner, queries each language server
 // for references and implementations, and returns the resulting edges.
+// Any textDocument/publishDiagnostics notifications received during enrichment
+// are captured inside each Client and can be retrieved via DrainDiagnostics.
 func (s *Service) Enrich(ctx context.Context, nodes []graph.Node, store *graph.Store) ([]graph.Edge, error) {
 	if len(nodes) == 0 {
 		return nil, nil
@@ -384,6 +438,22 @@ func (s *Service) Enrich(ctx context.Context, nodes []graph.Node, store *graph.S
 	}
 
 	return allEdges, ctx.Err()
+}
+
+// DrainDiagnostics collects and clears all publishDiagnostics notifications
+// that were captured across every active LSP client during the last Enrich
+// call. The returned map key is the document URI as sent by the language server.
+func (s *Service) DrainDiagnostics() map[string][]Diagnostic {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	merged := make(map[string][]Diagnostic)
+	for _, c := range s.clients {
+		for uri, diags := range c.DrainDiagnostics() {
+			merged[uri] = diags
+		}
+	}
+	return merged
 }
 
 // enrichNode opens the file, queries references/implementations for node n,

@@ -138,3 +138,23 @@ type ImplementationParams struct {
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
 	Position     Position               `json:"position"`
 }
+
+// -------------------------------------------------------------------
+// textDocument/publishDiagnostics  (server → client notification)
+// -------------------------------------------------------------------
+
+// Diagnostic is a single LSP diagnostic entry.
+type Diagnostic struct {
+	Range    Range  `json:"range"`
+	Severity int    `json:"severity"` // 1=error 2=warning 3=info 4=hint
+	Code     string `json:"code"`
+	Source   string `json:"source"`
+	Message  string `json:"message"`
+}
+
+// PublishDiagnosticsParams is the parameter object for
+// textDocument/publishDiagnostics notifications.
+type PublishDiagnosticsParams struct {
+	URI         string       `json:"uri"`
+	Diagnostics []Diagnostic `json:"diagnostics"`
+}

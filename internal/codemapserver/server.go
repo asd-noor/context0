@@ -16,6 +16,51 @@ import (
 	"context0/util"
 )
 
+// saveDiagnostics drains the LSP service diagnostic cache, converts every
+// entry to graph types, resolves the enclosing symbol node for each diagnostic,
+// and persists everything to the store.
+func (srv *Server) saveDiagnostics(ctx context.Context) error {
+	raw := srv.lspSvc.DrainDiagnostics()
+	for uri, lspDiags := range raw {
+		filePath := util.URIToPath(uri)
+
+		var diags []graph.Diagnostic
+		var edges []graph.DiagnosticEdge
+
+		for _, d := range lspDiags {
+			line := d.Range.Start.Line + 1      // LSP is 0-indexed
+			col := d.Range.Start.Character + 1  // LSP is 0-indexed
+			gd := graph.Diagnostic{
+				ID:       util.DiagnosticID(filePath, line, col, d.Message),
+				FilePath: filePath,
+				Line:     line,
+				Col:      col,
+				Severity: d.Severity,
+				Code:     d.Code,
+				Source:   d.Source,
+				Message:  d.Message,
+			}
+			diags = append(diags, gd)
+
+			// Best-effort: link to the smallest enclosing symbol node.
+			if n, err := srv.store.FindNode(ctx, filePath, line, col); err == nil && n != nil {
+				edges = append(edges, graph.DiagnosticEdge{
+					DiagnosticID: gd.ID,
+					NodeID:       n.ID,
+				})
+			}
+		}
+
+		if err := srv.store.UpsertDiagnosticsForFile(ctx, filePath, diags); err != nil {
+			return fmt.Errorf("upsert diagnostics for %s: %w", filePath, err)
+		}
+		if err := srv.store.BulkUpsertDiagnosticEdges(ctx, edges); err != nil {
+			return fmt.Errorf("upsert diagnostic edges for %s: %w", filePath, err)
+		}
+	}
+	return nil
+}
+
 // IndexStatus represents the lifecycle state of the codemap index.
 type IndexStatus int
 
@@ -206,7 +251,7 @@ func (srv *Server) runIndex(ctx context.Context) {
 	once.Do(func() { close(done) })
 }
 
-// doIndex runs the actual scan + enrich + store cycle.
+// doIndex runs the actual scan + enrich + store cycle, including diagnostics.
 func (srv *Server) doIndex(ctx context.Context) error {
 	if err := srv.store.Clear(ctx); err != nil {
 		return fmt.Errorf("clear store: %w", err)
@@ -228,6 +273,11 @@ func (srv *Server) doIndex(ctx context.Context) error {
 
 	if err := srv.store.BulkUpsertEdges(ctx, edges); err != nil {
 		return fmt.Errorf("upsert edges: %w", err)
+	}
+
+	// Persist any LSP diagnostics that arrived during enrichment.
+	if err := srv.saveDiagnostics(ctx); err != nil {
+		return fmt.Errorf("save diagnostics: %w", err)
 	}
 
 	return nil

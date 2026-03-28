@@ -46,6 +46,7 @@ func NewCmd(projectDir *string) *cobra.Command {
 		newSymbolsCmd(projectDir),
 		newSymbolCmd(projectDir),
 		newImpactCmd(projectDir),
+		newDiagnosticsCmd(projectDir),
 	)
 	return cmd
 }
@@ -405,4 +406,109 @@ func printJSON(v any) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(v)
+}
+
+// ── diagnostics ───────────────────────────────────────────────────────────────
+
+// severityLabel converts an LSP severity integer to a short human-readable tag.
+func severityLabel(s int) string {
+	switch s {
+	case 1:
+		return "error"
+	case 2:
+		return "warning"
+	case 3:
+		return "info"
+	case 4:
+		return "hint"
+	default:
+		return "unknown"
+	}
+}
+
+func newDiagnosticsCmd(projectDir *string) *cobra.Command {
+	var (
+		filterFile string
+		jsonOut    bool
+		severity   int
+	)
+	cmd := &cobra.Command{
+		Use:   "diagnostics",
+		Short: "List LSP diagnostics stored in the codemap index",
+		Long: `List categorised LSP diagnostics collected during the last index run.
+
+Diagnostics are grouped by file and ordered by severity (error → warning →
+info → hint) then by line number. Use --severity to restrict output to a
+specific level (1=error, 2=warning, 3=info, 4=hint).`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runDiagnostics(*projectDir, filterFile, severity, jsonOut)
+		},
+	}
+	cmd.Flags().StringVar(&filterFile, "file", "", "Restrict output to a single file (absolute or relative path)")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
+	cmd.Flags().IntVar(&severity, "severity", 0, "Filter by severity level (1=error 2=warning 3=info 4=hint); 0 means all")
+	return cmd
+}
+
+func runDiagnostics(dir, filterFile string, severity int, jsonOut bool) error {
+	root := gitRoot(dir)
+	ctx := context.Background()
+
+	store, err := openStore(dir)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+
+	var diags []graph.Diagnostic
+
+	if filterFile != "" {
+		absFile, err := codemapserver.AbsFilePath(filterFile)
+		if err != nil {
+			return err
+		}
+		diags, err = store.GetDiagnosticsForFile(ctx, absFile)
+		if err != nil {
+			return err
+		}
+	} else {
+		diags, err = store.GetAllDiagnostics(ctx)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Apply optional severity filter.
+	if severity > 0 {
+		filtered := diags[:0]
+		for _, d := range diags {
+			if d.Severity == severity {
+				filtered = append(filtered, d)
+			}
+		}
+		diags = filtered
+	}
+
+	if jsonOut {
+		return printJSON(diags)
+	}
+
+	if len(diags) == 0 {
+		fmt.Println("no diagnostics found")
+		return nil
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "SEVERITY\tFILE\tLINE\tCOL\tSOURCE\tMESSAGE")
+	for _, d := range diags {
+		rel := relPath(root, d.FilePath)
+		src := d.Source
+		if src == "" {
+			src = "-"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%d\t%d\t%s\t%s\n",
+			severityLabel(d.Severity), rel, d.Line, d.Col, src, d.Message)
+	}
+	return w.Flush()
 }

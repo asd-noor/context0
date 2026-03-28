@@ -260,6 +260,15 @@ context0 codemap impact <name> [--json]
 
 Recursive reverse traversal of the edge graph. Returns all symbols that directly or transitively depend on the target. Use this before modifying a public symbol to understand the blast radius.
 
+### List LSP Diagnostics
+
+```
+context0 codemap diagnostics [--file <path>] [--severity <level>] [--json]
+```
+
+Returns categorized LSP diagnostics across the codebase, collected during the last index run. Output is ordered by severity (error -> warning -> info -> hint) and file path. Use `--severity` to restrict output to a specific level (1=error, 2=warning, 3=info, 4=hint).
+
+
 ### Force a full re-index
 
 ```

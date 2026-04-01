@@ -157,6 +157,13 @@ func runWatchDaemon(dir string) error {
 func runWatchForeground(dir string) error {
 	root := gitRoot(dir)
 
+	// Register signal handling first, before acquiring any resources, so that
+	// a signal arriving at any point is queued rather than terminating the
+	// process immediately — defers will always get a chance to clean up.
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(quit)
+
 	pidPath, err := db.PIDPath(root)
 	if err != nil {
 		return fmt.Errorf("codemap watch: pid path: %w", err)
@@ -182,10 +189,6 @@ func runWatchForeground(dir string) error {
 	defer srv.Close()
 
 	fmt.Printf("Watcher running in foreground, PIDFILE: %s\n", pidPath)
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(quit)
 
 	select {
 	case <-quit:

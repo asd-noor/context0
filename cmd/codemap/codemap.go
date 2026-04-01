@@ -17,8 +17,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -70,19 +72,25 @@ func openStore(dir string) (*graph.Store, error) {
 
 func newWatchCmd(projectDir *string) *cobra.Command {
 	var daemonMode bool
+	var foreground bool
 	cmd := &cobra.Command{
 		Use:   "watch",
 		Short: "Start the codemap daemon in the background (auto-stops after 5 min of inactivity)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if daemonMode {
+			switch {
+			case daemonMode:
 				return runWatchDaemon(*projectDir)
+			case foreground:
+				return runWatchForeground(*projectDir)
+			default:
+				return runWatch(*projectDir)
 			}
-			return runWatch(*projectDir)
 		},
 	}
-	cmd.Flags().BoolVar(&daemonMode, "daemon", false, "Run in foreground daemon mode (internal use)")
+	cmd.Flags().BoolVar(&daemonMode, "daemon", false, "Run as background daemon with idle-timeout (internal use)")
 	cmd.Flags().MarkHidden("daemon") //nolint:errcheck
+	cmd.Flags().BoolVar(&foreground, "foreground", false, "Run the watcher in the foreground; lifecycle is managed by the caller (no auto-stop)")
 	return cmd
 }
 
@@ -112,8 +120,9 @@ func runWatch(dir string) error {
 	return nil
 }
 
-// runWatchDaemon is the actual blocking daemon loop, invoked by the spawned
-// background child process via the hidden --daemon flag.
+// runWatchDaemon is the blocking daemon loop invoked by the spawned background
+// child process via the hidden --daemon flag. The watcher's idle timer is
+// active: the process self-terminates after 5 minutes of file inactivity.
 func runWatchDaemon(dir string) error {
 	root := gitRoot(dir)
 
@@ -139,6 +148,49 @@ func runWatchDaemon(dir string) error {
 	defer srv.Close()
 
 	<-ctx.Done()
+	return nil
+}
+
+// runWatchForeground runs the watcher in the foreground. It blocks until
+// SIGINT or SIGTERM is received. No idle-timeout auto-stop is applied — the
+// invoker is fully responsible for the process lifecycle.
+func runWatchForeground(dir string) error {
+	root := gitRoot(dir)
+
+	pidPath, err := db.PIDPath(root)
+	if err != nil {
+		return fmt.Errorf("codemap watch: pid path: %w", err)
+	}
+	if daemon.IsAlive(pidPath) {
+		fmt.Printf("codemap daemon is already running, PIDFILE: %s\n", pidPath)
+		return nil
+	}
+	if err := daemon.WritePID(pidPath); err != nil {
+		return fmt.Errorf("codemap watch: write pid: %w", err)
+	}
+	defer daemon.RemovePID(pidPath)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// codemapserver.New uses a no-op cancel so the watcher's idle timer never
+	// triggers a shutdown — the caller controls the lifetime via signals.
+	srv, err := codemapserver.New(ctx, root)
+	if err != nil {
+		return fmt.Errorf("codemap watch: %w", err)
+	}
+	defer srv.Close()
+
+	fmt.Printf("Watcher running in foreground, PIDFILE: %s\n", pidPath)
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(quit)
+
+	select {
+	case <-quit:
+	case <-ctx.Done():
+	}
 	return nil
 }
 

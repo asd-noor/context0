@@ -12,4 +12,4 @@ value = "{{env.HOME}}/.local/gopath/1.26.1"
 
 [tasks.build]
 description = "Build context0 binary with FTS5 and sqlite-vec support"
-run = "CGO_ENABLED=1 go build -tags fts5 -o context0 ."
+run = "CGO_ENABLED=1 go build -tags fts5 -ldflags \"-X main.Version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)\" -o context0 ."

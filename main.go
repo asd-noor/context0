@@ -11,10 +11,15 @@ import (
 	cmdmemory "context0/cmd/memory"
 )
 
+// Version is set at build time via -ldflags "-X main.Version=<tag>".
+// It defaults to "dev" for local builds.
+var Version = "dev"
+
 func main() {
 	root := &cobra.Command{
-		Use:   "context0",
-		Short: "Context0 — AI-agent knowledge retrieval and task management",
+		Use:     "context0",
+		Version: Version,
+		Short:   "Context0 — AI-agent knowledge retrieval and task management",
 		Long: `context0 is a CLI tool for AI coding agents.
 
 It provides:

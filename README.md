@@ -14,8 +14,11 @@ A persistent knowledge layer for AI coding agents. Context0 gives agents long-te
 # Build
 CGO_ENABLED=1 go build -tags fts5 -o context0 .
 
-# Or with mise
+# Or with mise (injects git tag as version)
 mise run build
+
+# Check version
+context0 --version
 
 # Save a memory
 context0 memory save --category architecture --topic "Auth design" --content "JWT with refresh tokens..."

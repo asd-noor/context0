@@ -2,6 +2,11 @@
 
 All commands accept `--project <dir>` (or `-p`) to target a specific project directory. Defaults to the current working directory.
 
+```
+context0 --version   # print version and exit
+context0 -v          # shorthand
+```
+
 ---
 
 ## Memory Engine
@@ -209,15 +214,17 @@ Semantic code graph built from Tree-sitter AST parsing and LSP cross-reference e
 ### Start the watcher daemon
 
 ```
-context0 codemap watch
+context0 codemap watch [--foreground]
 ```
 
-Spawns a background daemon that:
+Without `--foreground`, spawns a detached background daemon that:
 1. Performs a full index (Tree-sitter scan + LSP enrichment)
 2. Watches for file changes and incrementally re-indexes
 3. Auto-stops after 5 minutes of file inactivity
 
-Output on success: `Watcher started, PIDFILE: <path>`
+With `--foreground`, runs the watcher in the current process instead of spawning a background daemon. The process blocks until it receives SIGINT or SIGTERM. The idle-timeout auto-stop is disabled — the caller is fully responsible for the process lifecycle. Useful for process supervisors (systemd, Docker, etc.) that manage the lifetime externally.
+
+Output on success: `Watcher started, PIDFILE: <path>` (background) or `Watcher running in foreground, PIDFILE: <path>` (foreground)
 Output if already running: `codemap daemon is already running, PIDFILE: <path>`
 
 Safe to call repeatedly -- it detects an existing daemon via the PID file.

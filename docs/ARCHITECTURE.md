@@ -168,8 +168,8 @@ codemapserver.Server
 ```
 
 Two constructors:
-- `New(ctx, rootDir)` -- for CLI commands (`index`, `symbol`, etc.); suppresses idle timeout.
-- `NewWatch(ctx, cancel, rootDir)` -- for `watch` daemon; idle timeout fires `cancel()` to exit cleanly.
+- `New(ctx, rootDir)` -- for CLI commands (`index`, `symbol`, etc.) and `watch --foreground`; idle timeout is suppressed (no-op cancel).
+- `NewWatch(ctx, cancel, rootDir)` -- for the background `watch` daemon; idle timeout fires `cancel()` to exit cleanly after 5 minutes of inactivity.
 
 ### Schema (`codemap.sqlite`)
 
@@ -245,7 +245,9 @@ watcher.Run(ctx, cancel)
   └── 5-minute idle timer -> cancel() -> daemon exits
 ```
 
-`codemap watch` spawns a detached background process via `daemon.Spawn()`. The child re-executes itself with a hidden `--daemon` flag, writes a PID file, and detaches from the parent session. The parent returns immediately after confirming the daemon started.
+`codemap watch` (background) spawns a detached background process via `daemon.Spawn()`. The child re-executes itself with a hidden `--daemon` flag, writes a PID file, and detaches from the parent session. The idle timer is active: the process self-terminates after 5 minutes of file inactivity.
+
+`codemap watch --foreground` runs the watcher in the calling process. It uses `codemapserver.New()` (no-op cancel) so the idle timer never fires. The process blocks until SIGINT or SIGTERM is received, at which point it cleans up the PID file and exits. Intended for process supervisors that manage the process lifetime externally.
 
 ---
 

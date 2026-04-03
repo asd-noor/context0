@@ -265,6 +265,61 @@ func TestSchemaMigration_AddStatusColumn(t *testing.T) {
 	}
 }
 
+// ---- AddTask ------------------------------------------------------------
+
+func TestAddTask(t *testing.T) {
+	eng := openTestEngine(t)
+
+	id, err := eng.CreateAgenda("addtask-test", "desc", []agenda.TaskInput{
+		{Details: "initial"},
+	})
+	if err != nil {
+		t.Fatalf("CreateAgenda: %v", err)
+	}
+
+	taskID, err := eng.AddTask(id, agenda.TaskInput{
+		Details:         "appended",
+		IsOptional:      true,
+		AcceptanceGuard: "all green",
+	})
+	if err != nil {
+		t.Fatalf("AddTask: %v", err)
+	}
+	if taskID == 0 {
+		t.Fatal("AddTask: expected non-zero task ID")
+	}
+
+	a, err := eng.GetAgenda(id)
+	if err != nil {
+		t.Fatalf("GetAgenda: %v", err)
+	}
+	if len(a.Tasks) != 2 {
+		t.Fatalf("expected 2 tasks, got %d", len(a.Tasks))
+	}
+	added := a.Tasks[1]
+	if added.Details != "appended" {
+		t.Errorf("Details: want %q, got %q", "appended", added.Details)
+	}
+	if !added.IsOptional {
+		t.Error("IsOptional: want true, got false")
+	}
+	if added.AcceptanceGuard != "all green" {
+		t.Errorf("AcceptanceGuard: want %q, got %q", "all green", added.AcceptanceGuard)
+	}
+	if added.Status != agenda.StatusPending {
+		t.Errorf("Status: want %q, got %q", agenda.StatusPending, added.Status)
+	}
+}
+
+func TestAddTaskNotFound(t *testing.T) {
+	eng := openTestEngine(t)
+
+	_, err := eng.AddTask(9999, agenda.TaskInput{Details: "ghost"})
+	if err == nil {
+		t.Fatal("expected error for non-existent plan, got nil")
+	}
+}
+
 // ---- UpdateAgenda appends tasks with pending status ---------------------
 
 func TestUpdateAgendaNewTasksPending(t *testing.T) {

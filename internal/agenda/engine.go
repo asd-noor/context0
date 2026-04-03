@@ -311,6 +311,41 @@ func (e *Engine) UpdateAgenda(id int64, title, description string, isActive *boo
 	return tx.Commit()
 }
 
+// AddTask appends a single task to an existing agenda and returns the new task ID.
+// The task is inserted with StatusPending and a task_order one higher than the
+// current maximum (or 0 if the agenda has no tasks yet).
+func (e *Engine) AddTask(agendaID int64, task TaskInput) (int64, error) {
+	// Verify the agenda exists.
+	var count int
+	if err := e.db.QueryRow(`SELECT COUNT(*) FROM agendas WHERE id=?`, agendaID).Scan(&count); err != nil {
+		return 0, fmt.Errorf("add_task: check agenda: %w", err)
+	}
+	if count == 0 {
+		return 0, fmt.Errorf("add_task: plan %d not found", agendaID)
+	}
+
+	var nextOrder int
+	if err := e.db.QueryRow(
+		`SELECT COALESCE(MAX(task_order), -1) + 1 FROM tasks WHERE agenda_id=?`, agendaID,
+	).Scan(&nextOrder); err != nil {
+		return 0, fmt.Errorf("add_task: get max order: %w", err)
+	}
+
+	res, err := e.db.Exec(
+		`INSERT INTO tasks (agenda_id, task_order, is_optional, details, acceptance_guard, status)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		agendaID, nextOrder, boolToInt(task.IsOptional), task.Details, task.AcceptanceGuard, string(StatusPending),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("add_task: insert: %w", err)
+	}
+	taskID, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("add_task: last insert id: %w", err)
+	}
+	return taskID, nil
+}
+
 // DeleteAgenda deletes an inactive agenda (and cascades to its tasks).
 // Returns an error if the agenda is still active.
 func (e *Engine) DeleteAgenda(id int64) error {

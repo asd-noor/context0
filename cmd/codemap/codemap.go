@@ -4,11 +4,11 @@
 //
 // All sub-commands share the parent-level --project flag (default: CWD):
 //
-//	context0 codemap [--project <dir>] watch     — start the daemon in the background
-//	context0 codemap [--project <dir>] index     — (re)build the symbol index
-//	context0 codemap [--project <dir>] status    — show current index status
-//	context0 codemap [--project <dir>] symbols <file> — list symbols in a file
-//	context0 codemap [--project <dir>] symbol  <name> — find a symbol across the project
+//	context0 codemap [--project <dir>] watch        — start the daemon in the background
+//	context0 codemap [--project <dir>] index        — (re)build the symbol index
+//	context0 codemap [--project <dir>] status       — show current index status
+//	context0 codemap [--project <dir>] outline <file> — list symbols defined in a file
+//	context0 codemap [--project <dir>] find   <name>  — locate a symbol across the project
 //	context0 codemap [--project <dir>] impact  <name> — show transitive impact of a symbol
 package codemap
 
@@ -275,8 +275,8 @@ func runStatus(dir string) error {
 func newSymbolsCmd(projectDir *string) *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
-		Use:   "symbols <file>",
-		Short: "List all symbols in <file>",
+		Use:   "outline <file>",
+		Short: "List all symbols defined in <file>",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSymbols(*projectDir, args[0], jsonOut)
@@ -322,8 +322,8 @@ func runSymbols(dir, filePath string, jsonOut bool) error {
 func newSymbolCmd(projectDir *string) *cobra.Command {
 	var withSource, jsonOut bool
 	cmd := &cobra.Command{
-		Use:   "symbol <name>",
-		Short: "Find all locations of <name> in the project",
+		Use:   "find <name>",
+		Short: "Locate all definitions of <name> across the project",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSymbol(*projectDir, args[0], withSource, jsonOut)

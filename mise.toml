@@ -4,12 +4,17 @@ go = "1.26.1"
 [env]
 MISE_GO_SET_GOROOT = true
 
-[env.GOCACHE]
-value = "{{config_root}}/.gocache"
-
 [env.GOPATH]
 value = "{{env.HOME}}/.local/gopath/1.26.1"
 
 [tasks.build]
 description = "Build context0 binary with FTS5 and sqlite-vec support"
 run = "CGO_ENABLED=1 go build -tags fts5 -ldflags \"-X main.Version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)\" -o context0 ."
+
+[tasks.install]
+description = "Build and install context0 to INSTALL_DIR (default: ~/.local/bin)"
+depends = ["build"]
+run = """
+install -Dm755 context0 "${INSTALL_DIR:-$HOME/.local/bin}/context0"
+rm context0
+"""

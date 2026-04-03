@@ -44,20 +44,18 @@ var languageServers = []langServer{
 	{langID: "typescript", binary: "typescript-language-server", args: []string{"--stdio"}},
 	{langID: "lua", binary: "lua-language-server", args: []string{"--stdio"}},
 	{langID: "zig", binary: "zls", args: nil},
-	{langID: "templ", binary: "templ", args: []string{"lsp"}},
 }
 
 // extToLangID maps file extensions to language IDs.
 var extToLangID = map[string]string{
-	".go":    "go",
-	".py":    "python",
-	".js":    "javascript",
-	".jsx":   "javascript",
-	".ts":    "typescript",
-	".tsx":   "typescript",
-	".lua":   "lua",
-	".zig":   "zig",
-	".templ": "templ",
+	".go":  "go",
+	".py":  "python",
+	".js":  "javascript",
+	".jsx": "javascript",
+	".ts":  "typescript",
+	".tsx": "typescript",
+	".lua": "lua",
+	".zig": "zig",
 }
 
 // incomingMessage is used internally to parse any LSP message from the server.

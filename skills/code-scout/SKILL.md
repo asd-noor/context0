@@ -2,7 +2,7 @@
 name: code-scout
 description: Explore a codebase's symbol graph using context0's Code Exploration Engine. Use when finding symbol definitions, listing file symbols, analyzing change impact, or starting the indexing daemon. Triggers on codemap, symbols, definitions, references, impact analysis, codebase exploration.
 license: GPL-3.0
-compatibility: Requires context0 binary in PATH. LSP servers (gopls, pylsp, typescript-language-server, lua-language-server, zls, templ) are auto-downloaded if not in PATH.
+compatibility: Requires context0 binary in PATH. LSP servers (gopls, pylsp, typescript-language-server, lua-language-server, zls) are auto-downloaded if not in PATH.
 allowed-tools: Bash
 ---
 
@@ -99,14 +99,14 @@ Do not use `index` as a routine step — the daemon handles indexing automatical
 
 - Database: `~/.context0/<project>/codemap.sqlite`
 - Node ID: `SHA256(filePath:name:kind)[:16]` — stable 32-char hex
-- Supported languages: Go (`.go`), Python (`.py`), JavaScript (`.js`, `.jsx`), TypeScript (`.ts`, `.tsx`), Lua (`.lua`), Zig (`.zig`), Templ (`.templ`)
+- Supported languages: Go (`.go`), Python (`.py`), JavaScript (`.js`, `.jsx`), TypeScript (`.ts`, `.tsx`), Lua (`.lua`), Zig (`.zig`)
 - Extracted kinds: `function`, `method`, `type`, `class`, `interface`
 - Edge relations: `calls`, `implements`, `references`, `imports`
 - Skipped paths: `vendor/`, `node_modules/`, `__pycache__/`, `.git/`, `zig-cache/`, `zig-out/`, generated files
 
 The index is built in two phases:
 1. **Tree-sitter scan** — fast, offline; extracts symbol nodes from AST
-2. **LSP enrichment** — extracts cross-reference edges using `gopls`, `pylsp`, `typescript-language-server`, `lua-language-server`, `zls`, or `templ`
+2. **LSP enrichment** — extracts cross-reference edges using `gopls`, `pylsp`, `typescript-language-server`, `lua-language-server`, or `zls`
 
 LSP binaries are resolved automatically: `PATH` → cache (`~/.context0/bin/`) → auto-download.
 

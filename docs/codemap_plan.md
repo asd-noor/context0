@@ -98,7 +98,7 @@ type Edge struct {
 | `.lua`         | tree-sitter-lua                      |
 | `.zig`         | tree-sitter-zig                      |
 
-Generated/derived files are excluded (e.g. `*_templ.go`, `*.sql.go`,
+Generated/derived files are excluded (e.g. `*.sql.go`,
 `*_string.go`).
 
 ### Scanner Behaviour
@@ -141,7 +141,6 @@ edges. This runs in a worker pool (10 goroutines).
 | JS/TS      | `typescript-language-server` | `--stdio` | yes |
 | Lua        | `lua-language-server` | `--stdio` | yes      |
 | Zig        | `zls`         | _(none)_       | yes           |
-| Templ      | `templ`       | `lsp`          | yes           |
 
 **Resolution priority** (per language):
 1. Already installed via CodeMap package manager → use cached binary
@@ -335,7 +334,7 @@ main.go           # Startup: DB → Scanner → LSP → Watcher → MCP server
    avoids unnecessary delays on warm re-indexes.
 5. **Gitignore compliance** — both the scanner and watcher load `.gitignore`
    via `go-gitignore` and skip matching paths.
-6. **Generated file exclusion** — scanner skips `*_templ.go`, `*.sql.go`,
+6. **Generated file exclusion** — scanner skips `*.sql.go`,
    `*_string.go` to avoid indexing machine-generated code.
 7. **WAL + shared cache** — DSN: `file:path?cache=shared&mode=rwc&_journal_mode=WAL`
 8. **Parameterized queries only** — never string-interpolate SQL.

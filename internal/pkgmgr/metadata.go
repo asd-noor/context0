@@ -60,11 +60,6 @@ var binaryMeta = map[string]meta{
 		installed: versionFromArgs("--version"),
 		latest:    latestGitHubRelease("zigtools", "zls"),
 	},
-	"templ": {
-		install:   goInstall("github.com/a-h/templ/cmd/templ@latest"),
-		installed: versionFromArgs("version"),
-		latest:    latestGoModule("github.com/a-h/templ/cmd/templ"),
-	},
 }
 
 // goInstall returns an installFn that runs `go install <pkg>`.

@@ -1,12 +1,13 @@
 # Context0
 
-A persistent knowledge layer for AI coding agents. Context0 gives agents long-term memory, structured task management, and codebase understanding -- all through a single CLI binary backed by per-project SQLite databases.
+A persistent knowledge layer for AI coding agents. Context0 gives agents long-term memory, structured task management, codebase understanding, and local LLM inference -- all through a single CLI binary backed by per-project SQLite databases.
 
 ## What it does
 
 - **Memory** -- Save and retrieve project knowledge using hybrid search (keyword + vector). AI agents store decisions, architecture notes, bug fixes, and context that persists across sessions.
 - **Agenda** -- Structured task plans with acceptance criteria, optional tasks, and automatic completion tracking. Agents create plans, work through tasks, and verify done-conditions before marking them complete.
-- **Code Exploration** -- A semantic code graph built from Tree-sitter AST parsing and LSP cross-references. Agents look up symbol definitions, list file symbols, and analyze change impact before modifying code. Supports Go, Python, JavaScript, TypeScript, Lua, Zig, and Templ. Also captures and graphs LSP diagnostics across files.
+- **Code Exploration** -- A semantic code graph built from Tree-sitter AST parsing and LSP cross-references. Agents look up symbol definitions, list file symbols, and analyze change impact before modifying code. Supports Go, Python, JavaScript, TypeScript, Lua, and Zig. Also captures and graphs LSP diagnostics across files.
+- **Python Sidecar** -- A local MLX-backed inference and embedding server. Powers embedding (replacing Ollama), LLM generation (`ask`, `exec`, `discover`), and self-correcting Python script execution via the Ralph-loop. Managed with `context0 --daemon`.
 
 ## Quick start
 
@@ -20,6 +21,9 @@ mise run build
 # Check version
 context0 --version
 
+# Start the Python sidecar (required for memory and ask/exec)
+context0 --daemon
+
 # Save a memory
 context0 memory save --category architecture --topic "Auth design" --content "JWT with refresh tokens..."
 
@@ -27,9 +31,12 @@ context0 memory save --category architecture --topic "Auth design" --content "JW
 context0 memory query "authentication"
 
 # Create a task plan with acceptance criteria
-context0 agenda create --title "Add auth" \
+context0 agenda plan create --title "Add auth" \
   --task "Implement JWT validation" --task-guard "go test passes" \
   --task "Add middleware to router" --task-guard "401 on missing token"
+
+# Ask a natural-language question across all engines
+context0 ask "What caching strategy does this project use?"
 
 # Start the code exploration daemon
 context0 codemap watch
@@ -42,17 +49,17 @@ All commands accept `--project <dir>` (or `-p`) to target a specific project. De
 
 ## Documentation
 
-- **[Installation](docs/INSTALL.md)** -- Prerequisites, build instructions, and Ollama setup
-- **[Usage Guide](docs/USAGE.md)** -- Complete CLI reference for all three engines
+- **[Installation](docs/INSTALL.md)** -- Prerequisites, build instructions, and sidecar setup
+- **[Usage Guide](docs/USAGE.md)** -- Complete CLI reference for all engines
 - **[Architecture](docs/ARCHITECTURE.md)** -- System design, data flows, schemas, and key decisions
 
 ## Tech stack
 
-Go, SQLite (FTS5 + sqlite-vec), Tree-sitter, LSP, Ollama, cobra.
+Go, SQLite (FTS5 + sqlite-vec), Tree-sitter, LSP, Python (MLX + uv), cobra.
 
 ## Data storage
 
-All data lives in `~/.context0/<project-path>/` as SQLite files -- no external services except Ollama for embeddings (memory engine only).
+All data lives in `~/.context0/<project-path>/` as SQLite files. Database names carry a `-ctx0` suffix for easy identification (e.g. `memory-ctx0.sqlite`, `agenda-ctx0.sqlite`, `<project>-ctx0.sqlite`). The sidecar socket and PID file live at `~/.context0/channel.sock` and `~/.context0/sidecar.pid`.
 
 ## License
 

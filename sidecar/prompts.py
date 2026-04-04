@@ -118,7 +118,7 @@ Common causes to check first:
 - Off-by-one index errors
 - Incorrect subprocess argument lists
 - Missing error handling for None / empty results
-
+{docs_section}
 ORIGINAL SCRIPT
 ```python
 {script}
@@ -128,6 +128,42 @@ ERROR
 {error}
 
 Return the fixed script only."""
+
+# ---------------------------------------------------------------------------
+# exec — repair triage phase (context7 doc lookup)
+# ---------------------------------------------------------------------------
+#
+# A tiny single-inference call that decides whether library docs would help
+# repair the failing script. Returns JSON or the literal string null.
+
+REPAIR_TRIAGE_SYSTEM = """\
+You are a triage assistant. Your only job is to decide whether official \
+library documentation would help fix a Python error.
+Output ONLY valid JSON on a single line, or the single word null.
+No markdown, no explanation, no prose."""
+
+REPAIR_TRIAGE_USER = """\
+A Python script failed. Decide if fetching library docs would help fix it.
+
+If yes, output exactly:
+{{"library": "<library-name>", "query": "<specific question>"}}
+
+If no, output exactly:
+null
+
+Rules:
+- Output null for syntax errors, name errors, logic errors unrelated to a library API.
+- Output JSON only when the error clearly references a specific third-party library \
+(ImportError, AttributeError / TypeError on a known package, changed API, etc.).
+- library must be the package import name (e.g. "requests", "numpy", "pandas").
+- query must be a concise, specific question (max 12 words).
+- Output ONLY the JSON object or null — nothing else.
+
+SCRIPT (first 40 lines)
+{script_head}
+
+ERROR
+{error}"""
 
 
 # ===========================================================================

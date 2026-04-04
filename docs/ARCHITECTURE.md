@@ -45,6 +45,7 @@ context0/
 │   ├── codemap/codemap.go      # codemap subcommands + --src-root flag
 │   ├── ask/ask.go              # ask command (delegates to sidecar)
 │   ├── exec/exec.go            # exec command (delegates to sidecar)
+│   ├── docs-lib/docslib.go     # docs-lib command: resolve + fetch Context7 docs
 │   ├── backup/backup.go        # backup: snapshot to ~/.context0/backup/<enc>/<ts>.tar.gz
 │   ├── recover/recover.go      # recover: restore latest snapshot from ~/.context0/backup/<enc>/
 │   ├── export/export.go        # export: pack databases to user-specified .tar.gz
@@ -86,9 +87,10 @@ context0/
 │   ├── embed.py                # MLX embedding engine (bge-small-en-v1.5)
 │   ├── inference.py            # MLX inference engine (Qwen2.5-Coder-3B)
 │   ├── ask.py                  # Orchestration loop: plan CLI commands + compress answer
-│   ├── ralph.py                # Ralph-loop: uv-run Python script with self-correction
+│   ├── ralph.py                # Ralph-loop: uv-run script + triage + context7 doc-fetch + repair
+│   ├── context7.py             # Context7 MCP client: resolve_library + get_docs (stdlib-only)
 │   ├── downloader.py           # Hugging Face Hub model cache manager
-│   ├── prompts.py              # Prompt templates (ask, exec repair, discover)
+│   ├── prompts.py              # Prompt templates (ask, exec repair + triage, discover)
 │   └── protocol.py             # Command name constants
 └── util/
     ├── hash.go                 # SHA256 node ID generation
@@ -128,7 +130,7 @@ Client → Server: {"cmd": "...", ...}\n
 Server → Client: {"ok": true/false, ...}\n  (then closes connection)
 ```
 
-Commands: `ping`, `embed`, `generate`, `ask`, `exec`, `discover`.
+Commands: `ping`, `embed`, `generate`, `ask`, `exec`, `discover`, `context7`.
 
 ### Concurrency
 
@@ -142,12 +144,33 @@ ralph_exec(script, project, inference):
     output, err = uv run - <<< script
     if err is None: return output
     if attempt == MAX_RETRIES: return last_error
-    fixed = inference.generate(repair prompt + script + err)
+    docs = _fetch_repair_docs(script, err, inference)  # may return None
+    fixed = inference.generate(repair prompt + script + err [+ docs])
     if fixed == script: abort (no improvement)
     script = fixed
 ```
 
 On failure the inference model receives the traceback and attempts a fix. Handles missing imports, syntax errors, and off-by-one logic. Gives up after 2 failed repair attempts.
+
+Before each repair the loop runs a **triage step** (`_fetch_repair_docs`) to decide whether library docs would help and, if so, fetches them from Context7. See the section below.
+
+### Repair triage and Context7 doc-fetch
+
+```
+_fetch_repair_docs(script, err, inference) -> str | None:
+  1. inference.generate(REPAIR_TRIAGE_SYSTEM + triage prompt, max_tokens=128, temp=0.1)
+     → JSON {"library": "...", "query": "..."} or null
+  2. If null (or non-JSON, or any exception): return None  # graceful degrade
+  3. context7.resolve_library(library, query) → library_id
+  4. context7.get_docs(library_id, query, tokens=2000) → markdown docs
+  5. Return docs string (or None on any Context7Error / exception)
+```
+
+The triage prompt is deliberately constrained: the model must output only a JSON object or the literal word `null`, at low temperature (0.1) and a small token budget (128). This keeps the overhead tiny.
+
+When docs are returned they are injected into `EXEC_REPAIR_USER` as a `LIBRARY DOCUMENTATION` section between the "Common causes" list and the script block. When `docs=None` the section is an empty string so the prompt is byte-for-byte identical to the pre-triage behaviour.
+
+**Graceful degradation is unconditional**: every failure path in `_fetch_repair_docs` — triage inference error, JSON parse failure, network error, Context7 protocol error — is caught, logged at `DEBUG`, and returns `None`. The ralph-loop never fails because of this step.
 
 ### `ask` orchestration
 
@@ -170,6 +193,7 @@ The sidecar plans which `memory`, `codemap`, and `agenda` subcommands to call, e
 | PID file | `CTX0_SIDECAR_PID` | `~/.context0/sidecar.pid` |
 | Embedding model | `CTX0_EMBED_MODEL` | `BAAI/bge-small-en-v1.5` |
 | Inference model | `CTX0_INFER_MODEL` | `mlx-community/Qwen2.5-Coder-3B-Instruct-4bit` |
+| Context7 API key | `CONTEXT7_API_KEY` | *(none — unauthenticated, low rate limits)* |
 
 ---
 
@@ -428,3 +452,5 @@ Archives store only base file names (no directory prefix) so they are portable a
 **Acceptance guards.** Each task can carry a "Done when:" condition. The skill instructions direct agents to verify the guard before marking a task complete, preventing premature completion.
 
 **Ralph-loop self-correction.** `exec` and `discover` feed failed script output back to the inference model for repair. This makes ad-hoc Python scripting practical without requiring the agent to manually debug execution errors.
+
+**Triage-before-repair for Context7 docs.** Before each repair attempt a tiny inference call decides whether the error is library-API-related. If yes, docs are fetched from Context7 and injected into the repair prompt. This avoids unconditionally fetching docs (expensive, noisy) while still giving the model up-to-date API information when it actually matters. Every failure path degrades silently so the ralph-loop is never broken by a network issue.

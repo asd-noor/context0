@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import urllib.request
 import urllib.error
 from typing import Any
@@ -40,6 +41,11 @@ _CLIENT_INFO = {"name": "context0", "version": "1.0"}
 
 # Accept both JSON (preferred) and SSE so the server has a choice.
 _ACCEPT = "application/json, text/event-stream"
+
+
+def _api_key() -> str | None:
+    """Return the CONTEXT7_API_KEY environment variable, or None if unset."""
+    return os.environ.get("CONTEXT7_API_KEY") or None
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +136,9 @@ class _Session:
         }
         if self._session_id:
             headers["Mcp-Session-Id"] = self._session_id
+        api_key = _api_key()
+        if api_key:
+            headers["CONTEXT7-API-KEY"] = api_key
 
         req = urllib.request.Request(
             _MCP_URL,

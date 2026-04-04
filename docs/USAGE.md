@@ -287,13 +287,46 @@ context0 exec -                  # read script from stdin
 context0 exec 'print("hello")'   # inline one-liner
 ```
 
-On failure the inference model automatically attempts to repair the script up to 2 times. Handles missing imports, syntax errors, and off-by-one logic.
+On failure the inference model automatically attempts to repair the script up to 2 times. Before each repair attempt a triage step checks whether the error is library-API-related; if so it fetches up-to-date Context7 docs and passes them into the repair prompt. Failures in triage or doc fetch degrade silently — the repair always runs regardless.
 
 Example:
 ```
 context0 exec analysis.py
 echo 'import os; print(os.getcwd())' | context0 exec -
 ```
+
+---
+
+## Library Docs
+
+Fetch up-to-date official documentation for any library, framework, or tool. **Requires the sidecar to be running.**
+
+```
+context0 docs-lib <library> <question>
+```
+
+Arguments are joined, so quotes are optional. Resolves the library name to a Context7 library ID, fetches docs filtered to the question, and prints them as markdown.
+
+- `--tokens` / `-n`: maximum documentation tokens to return (default: 5000)
+
+Examples:
+```
+context0 docs-lib react "how does useEffect work"
+context0 docs-lib "go cobra" persistent flags
+context0 docs-lib numpy broadcasting rules
+context0 docs-lib -n 2000 pandas groupby aggregation
+```
+
+Output format:
+```
+# react (/facebook/react)
+
+<markdown documentation>
+```
+
+The `ask` planner calls `docs-lib` automatically when a query involves a specific external dependency.
+
+**API key**: set `CONTEXT7_API_KEY` in the environment for higher rate limits (get a free key at context7.com/dashboard). Without a key the service is still usable but rate-limited.
 
 ---
 

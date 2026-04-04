@@ -7,7 +7,8 @@ A persistent knowledge layer for AI coding agents. Context0 gives agents long-te
 - **Memory** -- Save and retrieve project knowledge using hybrid search (keyword + vector). AI agents store decisions, architecture notes, bug fixes, and context that persists across sessions.
 - **Agenda** -- Structured task plans with acceptance criteria, optional tasks, and automatic completion tracking. Agents create plans, work through tasks, and verify done-conditions before marking them complete.
 - **Code Exploration** -- A semantic code graph built from Tree-sitter AST parsing and LSP cross-references. Agents look up symbol definitions, list file symbols, and analyze change impact before modifying code. Supports Go, Python, JavaScript, TypeScript, Lua, and Zig. Also captures and graphs LSP diagnostics across files.
-- **Python Sidecar** -- A local MLX-backed inference and embedding server. Powers embedding (replacing Ollama), LLM generation (`ask`, `exec`, `discover`), and self-correcting Python script execution via the Ralph-loop. Managed with `context0 --daemon`.
+- **Library Docs** -- `context0 docs-lib <library> <question>` fetches up-to-date official documentation from Context7 for any library or framework. The `ask` planner calls this automatically when a query involves a specific external dependency.
+- **Python Sidecar** -- A local MLX-backed inference and embedding server. Powers embedding (replacing Ollama), LLM generation (`ask`, `exec`, `discover`), and self-correcting Python script execution via the Ralph-loop. Before each repair attempt the sidecar runs a triage inference call: if the error is library-API-related it fetches Context7 docs and passes them into the repair prompt; failures degrade silently so the loop always continues. Managed with `context0 --daemon`.
 - **Data Management** -- Four commands cover backup and portability: `backup` snapshots databases to `~/.context0/backup/`; `recover` restores the latest snapshot automatically; `export` packs databases into a portable `.tar.gz`; `import` restores from any `.tar.gz` after creating a safety snapshot.
 
 ## Quick start
@@ -47,6 +48,8 @@ context0 codemap symbol SaveMemory --source
 ```
 
 All commands accept `--project <dir>` (or `-p`) to target a specific project. Defaults to CWD.
+
+Set `CONTEXT7_API_KEY` in your environment for higher rate limits on `docs-lib` and the Ralph-loop doc triage (free key at context7.com/dashboard; unauthenticated access still works but is rate-limited).
 
 ## Documentation
 

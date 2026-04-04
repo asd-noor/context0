@@ -107,19 +107,20 @@ Removes the memory and its vector embedding.
 
 ## Agenda Engine
 
-Structured task and plan management with acceptance criteria and automatic completion tracking.
+Structured task and plan management with acceptance criteria, priority ordering, and automatic completion tracking.
 
 ### Plans
 
 #### Create a plan
 
 ```
-context0 agenda plan create --title <t> --description <d> [--guard <g>] [--task <T>]... [--task-optional <bool>]...
+context0 agenda plan create --title <t> [--description <d>] [--guard <g>] [--priority <p>] [--branch <b>] [--task <T>]...
 ```
 
-- `--task` (`-T`): task description (repeat for multiple tasks)
-- `--guard`: acceptance criteria for the plan as a whole ("Completion Condition:" condition)
-- `--task-optional`: mark the corresponding task as optional (does not block auto-deactivation)
+- `--task` (`-T`): task details (repeat for multiple tasks)
+- `--guard`: acceptance criteria for the plan as a whole ("Completion Condition:" field)
+- `--priority` (`-p`): `high` | `normal` | `low` (default: `normal`)
+- `--branch`: git branch to associate with the plan (default: auto-detected from `git rev-parse`)
 
 Example:
 ```
@@ -127,6 +128,7 @@ context0 agenda plan create \
   --title "Add authentication" \
   --description "JWT middleware for all protected routes" \
   --guard "All protected routes return 401 without token and docs are updated" \
+  --priority high \
   --task "Create JWT validation in internal/auth" \
   --task "Add middleware to router" \
   --task "Update API docs"
@@ -135,10 +137,14 @@ context0 agenda plan create \
 #### List plans
 
 ```
-context0 agenda plan list [--all]
+context0 agenda plan list [--all] [--deleted] [--branch <b>]
 ```
 
-By default, only active plans are shown. Use `--all` to include completed (inactive) ones.
+By default, only active plans are shown. Flags are mutually exclusive:
+
+- `--all`: include inactive (completed/deactivated) plans
+- `--deleted`: show only soft-deleted plans
+- `--branch`: filter by git branch
 
 #### View a plan
 
@@ -146,17 +152,19 @@ By default, only active plans are shown. Use `--all` to include completed (inact
 context0 agenda plan get <id>
 ```
 
-Shows the full plan with all tasks, their status, and acceptance criteria.
+Shows the full plan with all tasks, their status and notes, acceptance criteria, priority, and branch.
 
 Task status symbols:
 - `[ ]` — pending (not yet started)
 - `[→]` — in progress (actively being worked on)
 - `[x]` — completed
+- `[!]` — blocked
 
 Output:
 ```
-Agenda #5 [active]
+Agenda #5 [active] [high]
   Title: Add authentication
+  Branch: feature/auth
   Description: JWT middleware for all protected routes
   Completion Condition: All protected routes return 401 without token and docs are updated
   Created: 2026-03-21 14:30:00
@@ -172,17 +180,20 @@ Agenda #5 [active]
 context0 agenda plan search <query> [--limit <n>]
 ```
 
-FTS5 keyword search on plan titles and descriptions.
+FTS5 keyword search across plan titles, descriptions, acceptance criteria, **and all task details and notes**. Results ordered by priority then recency.
+
+Example: searching for a word that appears only inside a task's details will still surface the parent plan.
 
 #### Update a plan
 
 ```
-context0 agenda plan update <id> [--title <t>] [--description <d>] [--guard <g>] [--deactivate] [--tasks <json>]
+context0 agenda plan update <id> [--title <t>] [--description <d>] [--guard <g>] [--priority <p>] [--branch <b>] [--deactivate] [--tasks <json>]
 ```
 
-- `--tasks`: JSON array of tasks to append, e.g. `'[{"Details":"New task","IsOptional":false}]'`
+- `--tasks`: JSON array of tasks to append, e.g. `'[{"Details":"New task"}]'`
 - `--guard`: update the plan-level acceptance criteria
-- `--deactivate`: manually mark the plan as inactive
+- `--priority`: update plan priority (`high` | `normal` | `low`)
+- `--deactivate`: manually mark the plan as inactive (sets `completed_at`)
 
 #### Delete a plan
 
@@ -190,20 +201,27 @@ context0 agenda plan update <id> [--title <t>] [--description <d>] [--guard <g>]
 context0 agenda plan delete <id>
 ```
 
-Only inactive (completed or deactivated) plans can be deleted. Active plans are protected.
+Soft-deletes the plan (sets `deleted_at`). The plan must be deactivated first. Deleted plans are hidden from `list` and `search` by default; use `--deleted` to see them.
+
+#### Restore a deleted plan
+
+```
+context0 agenda plan restore <id>
+```
+
+Clears `deleted_at`, making the plan visible again in normal list/search output.
 
 ### Tasks
 
 #### Add a task to an existing plan
 
 ```
-context0 agenda task add <plan-id> --details <T> [--optional]
+context0 agenda task add <plan-id> --details <T>
 ```
 
 Appends a new task to an existing plan regardless of the plan's current active state.
 
 - `--details` (`-T`): task description (required)
-- `--optional`: mark task as optional (does not block auto-deactivation)
 
 Example:
 ```
@@ -215,10 +233,12 @@ Output: `added task id=4 to plan 5`
 #### Mark a task as in-progress
 
 ```
-context0 agenda task start <plan-id> <task-number>
+context0 agenda task start <plan-id> <task-number> [--notes <n>]
 ```
 
 Marks the task as actively in progress. The plan remains active.
+
+- `--notes`: optional note to attach (empty string leaves existing notes unchanged)
 
 Example:
 ```
@@ -230,12 +250,14 @@ Output: `agenda 5: task 2 marked as in_progress`
 #### Mark a task done
 
 ```
-context0 agenda task done <plan-id> <task-number>
+context0 agenda task done <plan-id> <task-number> [--notes <n>]
 ```
 
 Tasks are identified by **plan ID** and **1-based task number** as displayed by `agenda plan get`.
 
-Before marking the agenda as inactive, verify the plan's acceptance criteria ("Completion Condition:" condition) is satisfied.
+- `--notes`: optional completion note (empty string leaves existing notes unchanged)
+
+Before marking the agenda as inactive, verify the plan's acceptance criteria ("Completion Condition:" field) is satisfied.
 
 Example:
 ```
@@ -244,7 +266,24 @@ context0 agenda task done 5 1
 
 Output: `agenda 5: task 1 marked as completed`
 
-When all required (non-optional) tasks are completed, the plan is automatically deactivated.
+When all tasks are completed, the plan is automatically deactivated and a memory snapshot is saved.
+
+#### Block a task
+
+```
+context0 agenda task block <plan-id> <task-number> [--notes <n>]
+```
+
+Marks a task as `blocked`. A blocked task keeps the plan open (it does not count as completed). Use `reopen` to unblock.
+
+- `--notes`: optional reason for the block (empty string leaves existing notes unchanged)
+
+Example:
+```
+context0 agenda task block 5 2 --notes "waiting on upstream fix"
+```
+
+Output: `agenda 5: task 2 marked as blocked`
 
 #### Reopen a task
 
@@ -252,7 +291,7 @@ When all required (non-optional) tasks are completed, the plan is automatically 
 context0 agenda task reopen <plan-id> <task-number>
 ```
 
-Resets a task to `pending`. Tasks can be reopened from any status (in_progress or completed).
+Resets a task to `pending`. Works from any status — use this to unblock a blocked task or undo a completion.
 
 ---
 

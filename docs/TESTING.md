@@ -92,7 +92,7 @@ Used by: `cmd/codemap` NoIndex tests and write tests (`TestIndexCreatesDB`, `Tes
 | `internal/memory` | `engine_test.go`, `rrf_test.go` | `SaveMemory`, `QueryMemory`, `UpdateMemory`, `DeleteMemory`; topK defaulting; FTS5/vector trigger cleanup; RRF score formula and ordering |
 | `internal/archive` | `archive_test.go` | `Write`/`Extract` round-trip; base-name-only storage; PID file exclusion; atomic overwrite; `BackupDir` path structure; `Snapshot` noop and happy-path |
 | `internal/daemon` | `daemon_test.go` | `WritePID`/`RemovePID`; `IsAlive` for current process, missing file, garbage content, zero PID, dead PID |
-| `internal/agenda` | `agenda_test.go` | Full CRUD, FTS5 search, task lifecycle, auto-deactivation, acceptance guards |
+| `internal/agenda` | `agenda_test.go` | Full CRUD, FTS5 search (agenda fields + task details/notes), task lifecycle, auto-deactivation, blocked status, priority ordering, soft-delete/restore, notes, completed_at, memory hook |
 | `internal/db` | `path_test.go` | `ProjectDir` encoding; DB name constants |
 | `internal/codemapserver` | `git_test.go` | Git root detection |
 | `internal/lsp` | `uri_test.go` | `file://` URI ↔ OS path conversion |
@@ -100,7 +100,7 @@ Used by: `cmd/codemap` NoIndex tests and write tests (`TestIndexCreatesDB`, `Tes
 | `internal/scanner` | *(in-package)* | Tree-sitter scan, language detection |
 | `internal/sidecar` | `commands_test.go`, `embed_test.go` | Command serialization; embed client (skips without sidecar) |
 | `cmd/codemap` | `codemap_test.go` | Index creation; no-index error paths; `status`, `outline`, `find`, `impact`, `diagnostics` output; JSON flags |
-| `cmd/agenda` | `agenda_test.go` | CLI surface for plan and task subcommands |
+| `cmd/agenda` | `agenda_test.go` | CLI surface for plan and task subcommands; priority, branch, notes, soft-delete, restore, block, search by task content |
 | `cmd/memory` | `memory_test.go` | CLI surface for memory subcommands (skips without sidecar) |
 | `cmd/exec` | `exec_test.go` | CLI surface for exec (skips without sidecar) |
 | `cmd/recover` | `recover_test.go` | `latestArchive`: missing dir, empty dir, non-`.tar.gz` ignored, single file, lexicographic selection, directory-with-.tar.gz-name ignored |

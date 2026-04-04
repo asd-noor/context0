@@ -61,7 +61,7 @@ context0/
 │   │   ├── engine.go           # SaveMemory, QueryMemory, UpdateMemory, DeleteMemory
 │   │   └── rrf.go              # Reciprocal Rank Fusion merger
 │   ├── agenda/                 # Agenda engine
-│   │   ├── db.go               # Schema: agendas, tasks, agendas_fts, triggers
+│   │   ├── db.go               # Schema: agendas, tasks, agendas_fts, tasks_fts, triggers
 │   │   └── engine.go           # CRUD + FTS5 search + task lifecycle + AddTask
 │   ├── graph/                  # Semantic code graph
 │   │   ├── types.go            # Node, Edge, Relation constants
@@ -255,23 +255,32 @@ Both search legs over-fetch by 5x before fusion to reduce rank cutoff bias. The 
 ### Schema (`agenda-ctx0.sqlite`)
 
 ```sql
-agendas     (id INTEGER PK, is_active BOOL, title TEXT, description TEXT, acceptance_guard TEXT, created_at DATETIME)
-tasks       (id INTEGER PK, agenda_id FK, task_order INT, is_optional BOOL,
-             details TEXT, is_completed INT, status TEXT)
-agendas_fts USING fts5(title, description, content='agendas')
+agendas     (id INTEGER PK, is_active BOOL, git_branch TEXT, priority TEXT,
+             title TEXT, description TEXT, acceptance_guard TEXT,
+             created_at DATETIME, completed_at DATETIME, deleted_at DATETIME)
+tasks       (id INTEGER PK, agenda_id FK, details TEXT, notes TEXT, status TEXT)
+agendas_fts USING fts5(title, description, acceptance_guard, content='agendas')
+tasks_fts   USING fts5(details, notes, content='tasks', content_rowid='id')
 ```
 
-`status` is the canonical task state: `pending` | `in_progress` | `completed`. The legacy `is_completed` integer column is kept for backwards compatibility and is kept in sync with `status` on every write (`completed` → 1, everything else → 0).
+`status` is the canonical task state: `pending` | `in_progress` | `completed` | `blocked`.
 
-Tasks cascade on agenda delete. FTS5 is trigger-maintained.
+`priority` controls sort order in list and search output: `high` (0) → `normal` (1) → `low` (2).
+
+`completed_at` is set on both auto-deactivation and manual `--deactivate`. `deleted_at` enables soft-delete; agendas must be deactivated before they can be deleted.
+
+Tasks cascade on agenda delete. Both FTS5 tables are trigger-maintained (INSERT / UPDATE / DELETE).
 
 ### Key behaviours
 
-- **Auto-deactivation**: when a task status is updated, the engine checks if all non-optional tasks for the agenda have `status = 'completed'`. If so, `is_active` is set to false. Tasks with status `in_progress` or `pending` keep the agenda active.
-- **Active guard on delete**: active agendas cannot be deleted.
+- **Auto-deactivation**: when a task status is updated, the engine checks if all tasks for the agenda have `status = 'completed'`. If so, `is_active` is set to false and `completed_at` is recorded. Tasks with `pending`, `in_progress`, or `blocked` status keep the agenda open.
+- **Memory snapshot on auto-close**: when a plan auto-deactivates (all tasks completed), a fire-and-forget memory save is triggered with the full plan details. This only fires on auto-deactivation, not on manual `--deactivate`.
+- **Active guard on delete**: agendas must be deactivated before they can be soft-deleted.
+- **Soft delete / restore**: `DeleteAgenda` sets `deleted_at`; `RestoreAgenda` clears it. Deleted agendas are excluded from list/search by default and shown with `--deleted`.
 - **Scoped task numbering**: tasks are displayed and addressed by 1-based order within their agenda (e.g. `task done 5 2` = agenda 5, task #2), not by global database ID.
-- **Acceptance guards**: each agenda can have a "Completion Condition:" condition. Agents should verify this condition before marking the agenda as inactive.
-- **Task lifecycle**: `pending` → `in_progress` → `completed` (and back via `reopen`). Any transition between states is permitted.
+- **Acceptance guards**: each agenda can have a "Completion Condition:" field. Agents should verify this condition before marking the agenda as inactive.
+- **Task lifecycle**: `pending` → `in_progress` → `completed` (and back via `reopen`). `block` transitions any task to `blocked`. `reopen` resets to `pending` and is also how blocked tasks are unblocked.
+- **Task notes**: each task carries an optional `notes` field updated via `task done --notes`, `task start --notes`, or `task block --notes`. Passing an empty string leaves existing notes unchanged.
 - **Task addition**: `AddTask()` appends a new task to an existing plan at any time, regardless of the plan's active state.
 - **No embeddings**: search is FTS5-only. Agenda queries are keyword-oriented, making vector search unnecessary.
 
@@ -280,8 +289,8 @@ Tasks cascade on agenda delete. FTS5 is trigger-maintained.
 The agenda command tree has two sub-groups:
 
 ```
-context0 agenda plan   list / get / create / search / update / delete
-context0 agenda task   add / start / done / reopen
+context0 agenda plan   list / get / create / search / update / delete / restore
+context0 agenda task   add / start / done / block / reopen
 ```
 
 ---
@@ -458,7 +467,7 @@ Archives store only base file names (no directory prefix) so they are portable a
 
 **Hard fail on embed error.** If the sidecar is unreachable, `SaveMemory` writes nothing. This preserves the invariant that every doc has a corresponding vector. Silently saving without a vector would degrade search quality.
 
-**FTS5-only for Agenda.** Agenda queries are keyword-oriented (task title, status lookup). Embeddings add no value and would create an unnecessary dependency on the sidecar for a purely task-management operation.
+**FTS5-only for Agenda.** Agenda queries are keyword-oriented (task title, status lookup). Embeddings add no value and would create an unnecessary dependency on the sidecar for a purely task-management operation. Two FTS5 tables cover the full search surface: `agendas_fts` (title, description, acceptance_guard) and `tasks_fts` (details, notes). `plan search` queries both via a UNION and deduplicates by agenda ID.
 
 **Concurrent scanning and enrichment.** Tree-sitter file parsing uses a `runtime.NumCPU()` worker pool because each `ScanFile` call creates an independent `sitter.Parser` — no shared mutable state. LSP enrichment runs all language servers in parallel (`Enrich` launches one goroutine per language, each with its own 10-worker pool) because each language has a dedicated `Client` subprocess with no cross-language locking. LSP pre-warming (`Prewarm`) is fired as a background goroutine before the Tree-sitter scan begins, so server startup and tree-sitter parsing overlap in time.
 

@@ -36,7 +36,7 @@ The sidecar provides embedding and LLM inference for the Memory engine and the `
 ### Start
 
 ```sh
-context0 --daemon
+context0 --start-sidecar
 ```
 
 On first run, uv installs Python dependencies into `.venv/` and downloads the models into `~/.context0/models/`:
@@ -51,7 +51,7 @@ Subsequent starts use the local cache and are fast.
 ### Stop
 
 ```sh
-context0 --kill-daemon
+context0 --stop-sidecar
 ```
 
 ### Override defaults

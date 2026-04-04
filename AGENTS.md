@@ -93,7 +93,7 @@ See [docs/TESTING.md](docs/TESTING.md) for full test details.
 ## Repository layout
 
 ```
-main.go                       # root command; --daemon/--kill-daemon/--project
+main.go                       # root command; --start-sidecar/--stop-sidecar/--project
 cmd/                          # one file per top-level subcommand
   memory/, agenda/, codemap/  # the three engines
   ask/, exec/, docs-lib/      # sidecar-delegating commands

@@ -13,7 +13,7 @@ import (
 func newEngine(t *testing.T) *memory.Engine {
 	t.Helper()
 	if !sidecar.IsRunning() {
-		t.Skip("sidecar not running — start with `context0 --daemon`")
+		t.Skip("sidecar not running — start with `context0 --start-sidecar`")
 	}
 	dir := t.TempDir()
 	eng, err := memory.New(dir)

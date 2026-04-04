@@ -574,7 +574,7 @@ codemap engine, or for ad-hoc structural queries.
 Example:
   context0 codemap discover "Find all files that import sqlite3"
 
-Requires the sidecar to be running (context0 --daemon).`,
+Requires the sidecar to be running (context0 --start-sidecar).`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			query := strings.Join(args, " ")

@@ -10,7 +10,7 @@ import (
 
 func TestEmbedViaSidecar(t *testing.T) {
 	if !sidecar.IsRunning() {
-		t.Skip("sidecar not running — start with `context0 --daemon`")
+		t.Skip("sidecar not running — start with `context0 --start-sidecar`")
 	}
 	raw, err := sidecar.SendRaw(sidecar.Request{"cmd": "embed", "text": "hello world"})
 	if err != nil {

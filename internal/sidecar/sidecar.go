@@ -309,7 +309,7 @@ func Send(req Request) (*Response, error) {
 func SendRaw(req Request) ([]byte, error) {
 	conn, err := net.DialTimeout("unix", SocketPath(), 3*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("sidecar: connect: %w (is the sidecar running? use `context0 --daemon`)", err)
+		return nil, fmt.Errorf("sidecar: connect: %w (is the sidecar running? use `context0 --start-sidecar`)", err)
 	}
 	defer conn.Close() //nolint:errcheck
 

@@ -21,7 +21,7 @@ mise run build
 mise run install
 
 # Start the sidecar (required for memory and ask/exec)
-context0 --daemon
+context0 --start-sidecar
 
 # Save and query memory
 context0 memory save --category arch --topic "Auth" --content "JWT with refresh tokens"

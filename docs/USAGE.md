@@ -16,7 +16,7 @@ The sidecar is a local Python process that provides embedding and LLM inference.
 ### Start the sidecar
 
 ```
-context0 --daemon
+context0 --start-sidecar
 ```
 
 Spawns the Python sidecar as a detached background process via `uv run sidecar/main.py`. On first run it downloads and caches the embedding model (`mlx-community/bge-small-en-v1.5-4bit`) and inference model (`mlx-community/Qwen2.5-Coder-3B-Instruct-4bit`) under `~/.context0/models/`. Subsequent starts use the local cache and are fast.
@@ -28,7 +28,7 @@ Output: `sidecar started` (or `sidecar already running` if it was already live).
 ### Stop the sidecar
 
 ```
-context0 --kill-daemon
+context0 --stop-sidecar
 ```
 
 Sends SIGTERM to the sidecar process.

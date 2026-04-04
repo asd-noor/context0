@@ -27,7 +27,7 @@ func NewCmd(projectDir *string) *cobra.Command {
   context0 exec 'print("hello")'   # inline one-liner
 
 On failure the model automatically attempts to repair the script up to 2 times.
-Requires the sidecar to be running (context0 --daemon).`,
+Requires the sidecar to be running (context0 --start-sidecar).`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			script, err := readScript(args[0])

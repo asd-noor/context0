@@ -11,7 +11,7 @@ import (
 // TestPing verifies the sidecar responds to a ping command.
 func TestPing(t *testing.T) {
 	if !sidecar.IsRunning() {
-		t.Skip("sidecar not running — start with `context0 --daemon`")
+		t.Skip("sidecar not running — start with `context0 --start-sidecar`")
 	}
 	resp, err := sidecar.Send(sidecar.Request{"cmd": "ping"})
 	if err != nil {
@@ -25,7 +25,7 @@ func TestPing(t *testing.T) {
 // TestGenerate verifies the sidecar can generate text from a simple prompt.
 func TestGenerate(t *testing.T) {
 	if !sidecar.IsRunning() {
-		t.Skip("sidecar not running — start with `context0 --daemon`")
+		t.Skip("sidecar not running — start with `context0 --start-sidecar`")
 	}
 	raw, err := sidecar.SendRaw(sidecar.Request{
 		"cmd": "generate",
@@ -58,7 +58,7 @@ func TestGenerate(t *testing.T) {
 // TestUnknownCommand verifies the sidecar returns ok=false for unknown commands.
 func TestUnknownCommand(t *testing.T) {
 	if !sidecar.IsRunning() {
-		t.Skip("sidecar not running — start with `context0 --daemon`")
+		t.Skip("sidecar not running — start with `context0 --start-sidecar`")
 	}
 	resp, err := sidecar.Send(sidecar.Request{"cmd": "nonexistent_command_xyz"})
 	if err != nil {

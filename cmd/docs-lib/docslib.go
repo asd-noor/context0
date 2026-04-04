@@ -5,7 +5,7 @@
 // documentation for the given topic.  The result is printed as markdown to
 // stdout.
 //
-// Requires the Python sidecar to be running (`context0 --daemon`).
+// Requires the Python sidecar to be running (`context0 --start-sidecar`).
 package cmddocslib
 
 import (
@@ -35,7 +35,7 @@ Examples:
   context0 docs-lib "go cobra" "persistent flags"
   context0 docs-lib numpy "broadcasting rules"
 
-Requires the sidecar to be running (context0 --daemon).`,
+Requires the sidecar to be running (context0 --start-sidecar).`,
 
 		Args: cobra.MinimumNArgs(2),
 

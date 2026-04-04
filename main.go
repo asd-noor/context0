@@ -38,8 +38,8 @@ var Version = "dev"
 func main() {
 	sidecar.SetFS(&embeddedSidecar)
 
-	var startDaemon bool
-	var killDaemon bool
+	var startSidecar bool
+	var stopSidecar bool
 
 	root := &cobra.Command{
 		Use:     "context0",
@@ -55,27 +55,27 @@ It provides:
 
 		// RunE fires when context0 is invoked with no subcommand (only flags).
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if startDaemon {
+			if startSidecar {
 				err := sidecar.Start()
 				if errors.Is(err, sidecar.ErrAlreadyRunning) {
 					fmt.Fprintln(os.Stderr, "sidecar already running")
 					return nil
 				}
 				if err != nil {
-					return fmt.Errorf("--daemon: %w", err)
+					return fmt.Errorf("--start-sidecar: %w", err)
 				}
 				fmt.Fprintln(os.Stderr, "sidecar started")
 				return nil
 			}
 
-			if killDaemon {
+			if stopSidecar {
 				err := sidecar.Stop()
 				if errors.Is(err, sidecar.ErrNotRunning) {
 					fmt.Fprintln(os.Stderr, "sidecar not running")
 					return nil
 				}
 				if err != nil {
-					return fmt.Errorf("--kill-daemon: %w", err)
+					return fmt.Errorf("--stop-sidecar: %w", err)
 				}
 				fmt.Fprintln(os.Stderr, "sidecar stopped")
 				return nil
@@ -86,8 +86,8 @@ It provides:
 		},
 	}
 
-	root.Flags().BoolVar(&startDaemon, "daemon", false, "Start the Python sidecar in the background (idempotent)")
-	root.Flags().BoolVar(&killDaemon, "kill-daemon", false, "Stop the running Python sidecar")
+	root.Flags().BoolVar(&startSidecar, "start-sidecar", false, "Start the Python sidecar in the background (idempotent)")
+	root.Flags().BoolVar(&stopSidecar, "stop-sidecar", false, "Stop the running Python sidecar")
 
 	cwd, _ := os.Getwd()
 	var projectDir string

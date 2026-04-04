@@ -34,7 +34,7 @@ All databases are stored under `~/.context0/<project-path>/` where the project p
 
 ```
 context0/
-├── main.go                     # Entry point: root command + --project flag + --daemon/--kill-daemon
+├── main.go                     # Entry point: root command + --project flag + --start-sidecar/--stop-sidecar
 ├── go.mod
 ├── pyproject.toml              # Python sidecar dependency manifest (uv)
 ├── uv.lock
@@ -115,7 +115,7 @@ The sidecar is an always-on background process that provides two services the Go
 - **Embedding** — every `memory save` / `memory query` call routes through the sidecar's `embed` endpoint. This replaces the previous Ollama dependency.
 - **Inference** — used by `ask`, `exec`, and `discover` for planning, generation, and self-correction.
 
-### Startup sequence (`context0 --daemon`)
+### Startup sequence (`context0 --start-sidecar`)
 
 ```
 1. Write PID  → ~/.context0/sidecar.pid

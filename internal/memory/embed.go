@@ -14,7 +14,7 @@ const (
 
 // EmbedClient generates 384-dim embeddings via the context0 Python sidecar.
 //
-// The sidecar must be running (`context0 --daemon`) before any Embed call is
+// The sidecar must be running (`context0 --start-sidecar`) before any Embed call is
 // made.  If it is not running, Embed returns a clear error directing the user
 // to start it.
 type EmbedClient struct{}

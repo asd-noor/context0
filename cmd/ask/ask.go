@@ -26,7 +26,7 @@ executes them, and compresses the results into a single answer.
 Example:
   context0 ask "What caching strategy does this project use?"
 
-Requires the sidecar to be running (context0 --daemon).`,
+Requires the sidecar to be running (context0 --start-sidecar).`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Join all args so the user doesn't need quotes.

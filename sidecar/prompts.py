@@ -154,5 +154,7 @@ REQUIREMENTS
 - The script must be runnable as-is with no arguments.
 - Use the project root as the search root for all commands.
 - Prefer rg for content searches, fd for file/directory structure searches.
+- rg flag notes: use -g "*.ext" for glob/file-type filtering (NOT --include),
+  use -l to list matching files only, use -n for line numbers.
 
 Return the Python script only."""

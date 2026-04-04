@@ -68,3 +68,7 @@ All data lives in `~/.context0/<project-path>/` as SQLite files. Database names 
 ## License
 
 [GPL-3.0](LICENSE)
+
+## Acknowledgements
+
+Library documentation is powered by [Context7](https://context7.com) — up-to-date, version-specific docs for LLMs and AI coding agents.

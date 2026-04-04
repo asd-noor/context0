@@ -6,9 +6,9 @@ Context0 is structured as four independent engines sharing a common CLI shell an
 
 ```
 context0 (CLI binary)
-  ├── memory   → memory-ctx0.sqlite     (FTS5 + sqlite-vec)
-  ├── agenda   → agenda-ctx0.sqlite     (FTS5)
-  ├── codemap  → <project>-ctx0.sqlite  (relational graph)
+  ├── memory   → memory-ctx0.sqlite   (FTS5 + sqlite-vec)
+  ├── agenda   → agenda-ctx0.sqlite   (FTS5)
+  ├── codemap  → codemap-ctx0.sqlite  (relational graph)
   └── sidecar  → ~/.context0/channel.sock  (Unix Domain Socket)
 ```
 
@@ -42,7 +42,7 @@ context0/
 ├── cmd/
 │   ├── memory/memory.go        # memory subcommands
 │   ├── agenda/agenda.go        # agenda subcommands (plan + task sub-trees)
-│   ├── codemap/codemap.go      # codemap subcommands + --src-root flag
+│   ├── codemap/codemap.go      # codemap subcommands
 │   ├── ask/ask.go              # ask command (delegates to sidecar)
 │   ├── exec/exec.go            # exec command (delegates to sidecar)
 │   ├── docs-lib/docslib.go     # docs-lib command: resolve + fetch Context7 docs
@@ -51,7 +51,7 @@ context0/
 │   ├── export/export.go        # export: pack databases to user-specified .tar.gz
 │   └── import/import.go        # import: restore from arbitrary .tar.gz (snapshots first)
 ├── internal/
-│   ├── db/path.go              # Per-project DB path resolution + CodeMapDBName()
+│   ├── db/path.go              # Per-project DB path resolution
 │   ├── archive/archive.go      # Shared tar.gz helpers: Write, Extract, Snapshot, BackupDir
 │   ├── daemon/daemon.go        # PID file management + detached process spawn
 │   ├── sidecar/sidecar.go      # Sidecar lifecycle (Start/Stop/IsRunning) + UDS client
@@ -74,6 +74,7 @@ context0/
 │   │   ├── types.go            # JSON-RPC + LSP message types
 │   │   ├── transport.go        # Content-Length framing (read/write)
 │   │   ├── uri.go              # file:// URI <-> OS path conversion
+│   │   ├── langroot.go         # Per-language workspace root detection (detectLangRoot)
 │   │   └── lsp.go              # Client per language; concurrent Enrich() + Prewarm()
 │   ├── watcher/watcher.go      # fsnotify -> incremental re-index + idle auto-stop
 │   ├── codemapserver/          # Code exploration engine wiring
@@ -290,10 +291,10 @@ codemapserver.Server
 ```
 
 Two constructors:
-- `New(ctx, rootDir, srcRoot)` -- for CLI commands (`index`, `symbol`, etc.) and `watch --foreground`; idle timeout is suppressed (no-op cancel).
-- `NewWatch(ctx, cancel, rootDir, srcRoot)` -- for the background `watch` daemon; idle timeout fires `cancel()` to exit cleanly after 5 minutes of inactivity.
+- `New(ctx, rootDir)` -- for CLI commands (`index`, `symbol`, etc.) and `watch --foreground`; idle timeout is suppressed (no-op cancel).
+- `NewWatch(ctx, cancel, rootDir)` -- for the background `watch` daemon; idle timeout fires `cancel()` to exit cleanly after 5 minutes of inactivity.
 
-### Schema (`<project>-ctx0.sqlite`)
+### Schema (`codemap-ctx0.sqlite`)
 
 ```sql
 nodes (id TEXT PK, name TEXT, kind TEXT, language TEXT,
@@ -309,17 +310,19 @@ edges (source_id TEXT, target_id TEXT, relation TEXT)
 - **Edge relations**: `implements`, `references`.
 - **Indexes**: `(file_path)` for `outline` and `FindNode`; composite `(name, language)` for `find` — covers both the unfiltered `WHERE name = ?` path and the filtered `WHERE name = ? AND language = ?` path via the leftmost-prefix rule.
 
-### Database naming and `--src-root`
+### Per-language workspace roots
 
-The codemap DB filename is derived from `--src-root` via `db.CodeMapDBName(srcRoot)`:
+Before starting an LSP client, `detectLangRoot` (in `internal/lsp/langroot.go`) searches for the innermost directory under the git root that contains a language-specific manifest file. It performs a BFS up to depth 3, skipping `vendor/`, `node_modules/`, `.git/`, and hidden directories.
 
-| `--src-root` value | Resulting DB name |
+| Language | Manifest files |
 |---|---|
-| *(empty)* | `codemap-ctx0.sqlite` |
-| bare name (e.g. `myrepo`) | `myrepo-ctx0.sqlite` |
-| absolute path (e.g. `/home/alice/myrepo/src`) | `home=alice=myrepo=src-ctx0.sqlite` |
+| go | `go.mod` |
+| python | `pyproject.toml`, `setup.py`, `setup.cfg` |
+| javascript / typescript | `package.json`, `tsconfig.json` |
+| lua | `.luarc.json` |
+| zig | `build.zig` |
 
-`--src-root` defaults to `filepath.Base(projectDir)` so the DB is named after the project (e.g. `context0-ctx0.sqlite`). A bare basename is a DB-naming label only and does not override the scan directory; only a value containing a path separator changes the actual directory that is scanned.
+If no manifest is found the git root itself is used as the workspace root. This ensures each language server is initialised in the most relevant sub-directory (e.g. a TypeScript package nested inside a Go monorepo).
 
 ### Index lifecycle
 
@@ -375,7 +378,7 @@ Binaries are resolved in order: **PATH** -> **cache** (`~/.context0/bin/`) -> **
 
 After resolution, a background goroutine checks for a newer version via the upstream registry (GitHub releases, npm, pip, Go module proxy) and silently reinstalls if one is found. Checked once per binary per process lifetime via `sync.Map`.
 
-Supported servers: `gopls`, `pylsp`, `typescript-language-server`, `lua-language-server`, `zls`.
+Supported servers: `gopls`, `pyright-langserver`, `typescript-language-server`, `lua-language-server`, `zls`.
 
 ### Watcher and daemon
 
@@ -453,7 +456,7 @@ Archives store only base file names (no directory prefix) so they are portable a
 
 **Tree-sitter + LSP separation.** Tree-sitter provides fast, offline symbol extraction. LSP provides edges that require a running language server. The index partially succeeds even if LSP servers are unavailable.
 
-**`--src-root` separates DB naming from scan root.** Previously the codemap always used a fixed `codemap.sqlite` filename. `--src-root` lets each project have a named database (e.g. `myrepo-ctx0.sqlite`) while also allowing a different directory to be scanned than the project root (useful for monorepos or sub-package indexing).
+**Per-language workspace roots.** Each LSP client is initialised against the innermost directory containing a language-specific manifest (`go.mod`, `pyproject.toml`, `package.json`, etc.), found via BFS up to depth 3 from the git root. This ensures language servers receive the correct workspace root in monorepos where multiple language ecosystems coexist. Falls back to the git root if no manifest is found.
 
 **Debounced incremental re-indexing.** 500ms debounce prevents excessive LSP calls during rapid edits. The 5-minute idle auto-stop avoids holding LSP server processes indefinitely.
 

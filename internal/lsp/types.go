@@ -74,11 +74,20 @@ type TextDocumentItem struct {
 // Initialize
 // -------------------------------------------------------------------
 
+// WorkspaceFolder is a single entry in the workspaceFolders list sent during
+// initialization. gopls uses this for multi-module repos; typescript-language-server
+// and lua-language-server also prefer it over the deprecated rootUri alone.
+type WorkspaceFolder struct {
+	URI  string `json:"uri"`
+	Name string `json:"name"`
+}
+
 // InitializeParams is the parameter object for the initialize request.
 type InitializeParams struct {
-	ProcessID    int                `json:"processId"`
-	RootURI      string             `json:"rootUri"`
-	Capabilities ClientCapabilities `json:"capabilities"`
+	ProcessID        int                `json:"processId"`
+	RootURI          string             `json:"rootUri"`
+	WorkspaceFolders []WorkspaceFolder  `json:"workspaceFolders"`
+	Capabilities     ClientCapabilities `json:"capabilities"`
 }
 
 // ClientCapabilities is intentionally minimal.

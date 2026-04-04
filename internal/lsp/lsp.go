@@ -39,11 +39,24 @@ type langServer struct {
 // languageServers lists all supported language servers.
 var languageServers = []langServer{
 	{langID: "go", binary: "gopls", args: []string{"serve"}},
-	{langID: "python", binary: "pylsp", args: []string{"--stdio"}},
+	{langID: "python", binary: "pyright-langserver", args: []string{"--stdio"}},
 	{langID: "javascript", binary: "typescript-language-server", args: []string{"--stdio"}},
 	{langID: "typescript", binary: "typescript-language-server", args: []string{"--stdio"}},
 	{langID: "lua", binary: "lua-language-server", args: []string{"--stdio"}},
 	{langID: "zig", binary: "zls", args: nil},
+}
+
+// serverArgs returns the effective command-line arguments for spec, injecting
+// any langRoot-dependent flags. Currently this adds --chdir=<langRoot> for
+// lua-language-server so it anchors its workspace and .luarc.json discovery to
+// the language-specific root rather than the process CWD.
+func serverArgs(spec *langServer, langRoot string) []string {
+	if spec.langID == "lua" {
+		args := make([]string, len(spec.args))
+		copy(args, spec.args)
+		return append(args, "--chdir="+langRoot)
+	}
+	return spec.args
 }
 
 // incomingMessage is used internally to parse any LSP message from the server.
@@ -76,8 +89,17 @@ type Client struct {
 
 // newClient starts the given language server binary and performs the
 // initialize / initialized handshake.
+//
+// rootDir is the language-specific workspace root (detected via detectLangRoot).
+// It is used as the process working directory so that servers which rely on CWD
+// for runtime-path discovery (pyright, lua-language-server) resolve modules
+// relative to the project root, and as the LSP rootUri / workspaceFolders URI
+// sent during initialization.
 func newClient(ctx context.Context, binary string, args []string, rootDir string) (*Client, error) {
+	absRoot, _ := filepath.Abs(rootDir)
+
 	cmd := exec.CommandContext(ctx, binary, args...) //nolint:gosec
+	cmd.Dir = absRoot                                // anchor the server process to the workspace root
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("lsp: stdin pipe: %w", err)
@@ -92,7 +114,6 @@ func newClient(ctx context.Context, binary string, args []string, rootDir string
 		return nil, fmt.Errorf("lsp: start %s: %w", binary, err)
 	}
 
-	absRoot, _ := filepath.Abs(rootDir)
 	c := &Client{
 		cmd:       cmd,
 		stdin:     stdin,
@@ -221,8 +242,11 @@ func (c *Client) initialize(ctx context.Context) error {
 	defer c.mu.Unlock()
 
 	params := InitializeParams{
-		ProcessID:    os.Getpid(),
-		RootURI:      c.rootURI,
+		ProcessID: os.Getpid(),
+		RootURI:   c.rootURI,
+		WorkspaceFolders: []WorkspaceFolder{
+			{URI: c.rootURI, Name: filepath.Base(URIToPath(c.rootURI))},
+		},
 		Capabilities: ClientCapabilities{},
 	}
 	var result InitializeResult
@@ -328,16 +352,16 @@ func (c *Client) warmupWait() {
 
 // Service manages per-language LSP clients and drives the enrichment phase.
 type Service struct {
-	rootDir string
+	gitRoot string
 	pm      *pkgmgr.Manager
 	clients map[string]*Client // keyed by langID
 	mu      sync.Mutex
 }
 
-// NewService creates a new Service for the given project root.
-func NewService(rootDir string, pm *pkgmgr.Manager) *Service {
+// NewService creates a new Service for the given git root.
+func NewService(gitRoot string, pm *pkgmgr.Manager) *Service {
 	return &Service{
-		rootDir: rootDir,
+		gitRoot: gitRoot,
 		pm:      pm,
 		clients: make(map[string]*Client),
 	}
@@ -402,7 +426,8 @@ func (s *Service) getClient(ctx context.Context, langID string) (*Client, error)
 		return nil, fmt.Errorf("lsp: resolve %s: %w", spec.binary, err)
 	}
 
-	c, err := newClient(ctx, binary, spec.args, s.rootDir)
+	langRoot := detectLangRoot(s.gitRoot, langID)
+	c, err := newClient(ctx, binary, serverArgs(spec, langRoot), langRoot)
 	if err != nil {
 		return nil, err
 	}

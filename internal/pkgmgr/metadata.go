@@ -40,10 +40,10 @@ var binaryMeta = map[string]meta{
 		installed: versionFromArgs("version"),
 		latest:    latestGoModule("golang.org/x/tools/gopls"),
 	},
-	"pylsp": {
-		install:   pipInstall("python-lsp-server"),
+	"pyright-langserver": {
+		install:   pipInstall("pyright"),
 		installed: versionFromArgs("--version"),
-		latest:    latestPipPackage("python-lsp-server"),
+		latest:    latestPipPackage("pyright"),
 	},
 	"typescript-language-server": {
 		install:   npmInstall("typescript-language-server", "typescript"),

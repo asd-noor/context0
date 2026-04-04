@@ -8,34 +8,6 @@ import (
 	"strings"
 )
 
-// CodeMapDBName returns the SQLite file name for the codemap index.
-//
-// The naming rules are:
-//   - empty srcRoot → "codemap-ctx0.sqlite" (generic fallback)
-//   - bare name with no path separator (e.g. "myrepo") → "myrepo-ctx0.sqlite"
-//     This is the common case when --src-root defaults to the project basename.
-//   - path containing a separator (e.g. "/home/alice/myrepo/src") → the
-//     absolute path is encoded using the same separator-replacement scheme as
-//     ProjectDir (os.PathSeparator → '=') and "-ctx0.sqlite" is appended,
-//     giving each distinct scan root its own independent database file.
-func CodeMapDBName(srcRoot string) string {
-	if srcRoot == "" {
-		return "codemap-ctx0.sqlite"
-	}
-	// Bare name — use directly as the label.
-	if !strings.ContainsRune(srcRoot, filepath.Separator) {
-		return srcRoot + "-ctx0.sqlite"
-	}
-	abs, err := filepath.Abs(srcRoot)
-	if err != nil {
-		// Unreachable in practice; fall back to the default name.
-		return "codemap-ctx0.sqlite"
-	}
-	transformed := strings.ReplaceAll(abs, string(os.PathSeparator), "=")
-	transformed = strings.TrimPrefix(transformed, "=")
-	return transformed + "-ctx0.sqlite"
-}
-
 // ProjectDir returns the path to the per-project context0 data directory.
 // The project directory path is transformed by replacing os.PathSeparator
 // with equals signs, matching the spec in AGENTS.md.

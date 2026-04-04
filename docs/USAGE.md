@@ -333,7 +333,7 @@ Semantic code graph built from Tree-sitter AST parsing and LSP cross-reference e
 ### Start the watcher daemon
 
 ```
-context0 codemap watch [--foreground] [--src-root <dir>]
+context0 codemap watch [--foreground]
 ```
 
 Without `--foreground`, spawns a detached background daemon that:
@@ -347,17 +347,6 @@ Output on success: `Watcher started, PIDFILE: <path>` (background) or `Watcher r
 Output if already running: `codemap daemon is already running, PIDFILE: <path>`
 
 Safe to call repeatedly -- it detects an existing daemon via the PID file.
-
-### `--src-root` flag
-
-```
-context0 codemap --src-root <path> <subcommand>
-```
-
-A persistent flag inherited by all `codemap` subcommands. Controls two things:
-
-1. **Database name** -- the SQLite file is named `<src-root>-ctx0.sqlite`. Defaults to `filepath.Base(projectDir)`, so a project at `/home/alice/myrepo` uses `myrepo-ctx0.sqlite` by default.
-2. **Scan directory** -- if `--src-root` is a path containing a separator (not just a bare name), the scanner uses that directory instead of the project root. Useful for monorepos or indexing a sub-package independently.
 
 ### Check index status
 
@@ -418,7 +407,7 @@ Only use this if the daemon cannot be started or the index is corrupt. The daemo
 | Language | Extensions | Symbol kinds | LSP server |
 |---|---|---|---|
 | Go | `.go` | function, method, type | gopls |
-| Python | `.py` | function, class | pylsp |
+| Python | `.py` | function, class | pyright-langserver |
 | JavaScript | `.js`, `.jsx` | function, method, class | typescript-language-server |
 | TypeScript | `.ts`, `.tsx` | function, method, class, interface, type | typescript-language-server |
 | Lua | `.lua` | function, method | lua-language-server |

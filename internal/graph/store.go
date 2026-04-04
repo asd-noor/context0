@@ -89,8 +89,7 @@ type Store struct {
 
 // Open opens (or creates) the codemap SQLite database for the given project
 // directory, applies the schema, and returns the store. dbName is the file
-// name of the SQLite database (e.g. "codemap.sqlite" or a src-root-derived
-// name); use db.CodeMapDBName to compute it.
+// name of the SQLite database (e.g. "codemap-ctx0.sqlite").
 func Open(projectPath, dbName string) (*Store, error) {
 	dbPath, err := dbutil.DBPath(projectPath, dbName)
 	if err != nil {
@@ -112,7 +111,7 @@ func Open(projectPath, dbName string) (*Store, error) {
 
 // OpenReadOnly opens an existing codemap database in read-only mode.
 // If the database file does not exist it returns ErrNotIndexed. dbName is the
-// file name of the SQLite database; use db.CodeMapDBName to compute it.
+// file name of the SQLite database (e.g. "codemap-ctx0.sqlite").
 func OpenReadOnly(projectPath, dbName string) (*Store, error) {
 	dbPath, err := dbutil.DBPath(projectPath, dbName)
 	if err != nil {

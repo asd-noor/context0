@@ -398,3 +398,87 @@ Only use this if the daemon cannot be started or the index is corrupt. The daemo
 ### Skipped paths
 
 `vendor/`, `node_modules/`, `__pycache__/`, `.git/`, `.venv/`, `zig-cache/`, `zig-out/`, and generated files (`.sql.go`, `_string.go`). Respects `.gitignore`.
+
+---
+
+## Data Management
+
+Four commands cover database backup and portability. All four use the same underlying tar.gz logic and exclude PID files from archives.
+
+### Backup (automatic snapshots)
+
+```
+context0 backup
+```
+
+Snapshots all project databases to:
+
+```
+~/.context0/backup/<encoded-project>/<timestamp>.tar.gz
+```
+
+No arguments. The destination is always the managed backup directory. Use this for routine or pre-change snapshots.
+
+Example output:
+```
+backed up → /Users/alice/.context0/backup/Users=alice=myrepo/20260404-143000.tar.gz
+```
+
+### Recover (restore latest snapshot)
+
+```
+context0 recover
+```
+
+Finds the most recent `.tar.gz` in `~/.context0/backup/<encoded-project>/`, snapshots the current state first for safety, then extracts.
+
+No arguments — it always picks the latest backup. To restore from a specific archive use `import`.
+
+Example output:
+```
+snapshot → /Users/alice/.context0/backup/Users=alice=myrepo/20260404-150000.tar.gz
+3 file(s) restored → /Users/alice/.context0/Users=alice=myrepo/
+```
+
+### Export (portable archive)
+
+```
+context0 export [--output <path>]
+```
+
+Packs all project databases into a `.tar.gz` at the given path. Files are stored by base name only, making the archive portable across machines.
+
+- `--output` / `-o`: destination directory or explicit file path (default: current directory)
+  - If a directory is given, the file is named `<project>-ctx0-<timestamp>.tar.gz` automatically.
+
+Example:
+```
+context0 export                          # → ./myrepo-ctx0-20260404-143000.tar.gz
+context0 export -o /tmp/myrepo.tar.gz   # → /tmp/myrepo.tar.gz
+```
+
+Example output:
+```
+exported 3 file(s) → /Users/alice/myrepo-ctx0-20260404-143000.tar.gz
+```
+
+### Import (restore from archive)
+
+```
+context0 import <archive.tar.gz>
+```
+
+Snapshots the current state first for safety, then extracts the given archive into the project's data directory, overwriting existing files atomically.
+
+Accepts any `.tar.gz` produced by `export` (or `backup`). Useful for transferring databases between machines or restoring from a manually managed archive.
+
+Example:
+```
+context0 import /tmp/myrepo.tar.gz
+```
+
+Example output:
+```
+snapshot → /Users/alice/.context0/backup/Users=alice=myrepo/20260404-150000.tar.gz
+3 file(s) restored → /Users/alice/.context0/Users=alice=myrepo/
+```

@@ -44,9 +44,14 @@ context0/
 │   ├── agenda/agenda.go        # agenda subcommands (plan + task sub-trees)
 │   ├── codemap/codemap.go      # codemap subcommands + --src-root flag
 │   ├── ask/ask.go              # ask command (delegates to sidecar)
-│   └── exec/exec.go            # exec command (delegates to sidecar)
+│   ├── exec/exec.go            # exec command (delegates to sidecar)
+│   ├── backup/backup.go        # backup: snapshot to ~/.context0/backup/<enc>/<ts>.tar.gz
+│   ├── recover/recover.go      # recover: restore latest snapshot from ~/.context0/backup/<enc>/
+│   ├── export/export.go        # export: pack databases to user-specified .tar.gz
+│   └── import/import.go        # import: restore from arbitrary .tar.gz (snapshots first)
 ├── internal/
 │   ├── db/path.go              # Per-project DB path resolution + CodeMapDBName()
+│   ├── archive/archive.go      # Shared tar.gz helpers: Write, Extract, Snapshot, BackupDir
 │   ├── daemon/daemon.go        # PID file management + detached process spawn
 │   ├── sidecar/sidecar.go      # Sidecar lifecycle (Start/Stop/IsRunning) + UDS client
 │   ├── memory/                 # Memory engine
@@ -356,6 +361,43 @@ watcher.Run(ctx, cancel)
 `codemap watch` (background) spawns a detached background process via `daemon.Spawn()`. The child re-executes itself with a hidden `--daemon` flag, writes a PID file, and detaches from the parent session. The idle timer is active: the process self-terminates after 5 minutes of file inactivity.
 
 `codemap watch --foreground` runs the watcher in the calling process. It uses `codemapserver.New()` (no-op cancel) so the idle timer never fires. The process blocks until SIGINT or SIGTERM is received, at which point it cleans up the PID file and exits. Intended for process supervisors that manage the process lifetime externally.
+
+---
+
+## Data Management
+
+Four commands handle database backup and portability, all sharing helpers from `internal/archive`.
+
+### Commands
+
+| Command   | Args            | Behavior |
+|-----------|-----------------|----------|
+| `backup`  | none            | Calls `archive.Snapshot(dataDir)` → writes `~/.context0/backup/<enc>/<timestamp>.tar.gz` |
+| `recover` | none            | Reads latest `.tar.gz` from `~/.context0/backup/<enc>/`, snapshots current state, then extracts |
+| `export`  | `--output / -o` | Packs data dir into a user-specified `.tar.gz` (defaults to CWD with auto-generated filename) |
+| `import`  | `<file.tar.gz>` | Snapshots current state, then extracts from the given archive |
+
+`backup`/`recover` are the automatic pair (managed location, no arguments).  
+`export`/`import` are the manual pair (user-controlled paths, suitable for cross-machine transfer).
+
+### `internal/archive` API
+
+```
+Write(destPath string, files []string) error
+  — creates a .tar.gz storing files by base name only (portable)
+
+Extract(dataDir, archivePath string) (int, error)
+  — unpacks a .tar.gz into dataDir, skipping PID files, atomic via temp+rename
+
+Snapshot(dataDir string) (string, error)
+  — packs dataDir into ~/.context0/backup/<base(dataDir)>/<timestamp>.tar.gz
+  — returns "" (no error) if dataDir is empty or doesn't exist yet
+
+BackupDir(dataDir string) (string, error)
+  — returns ~/.context0/backup/<base(dataDir)> without creating it
+```
+
+Archives store only base file names (no directory prefix) so they are portable across machines with different project paths. PID files (`*.pid`) are excluded from both reads and writes.
 
 ---
 

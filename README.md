@@ -8,6 +8,7 @@ A persistent knowledge layer for AI coding agents. Context0 gives agents long-te
 - **Agenda** -- Structured task plans with acceptance criteria, optional tasks, and automatic completion tracking. Agents create plans, work through tasks, and verify done-conditions before marking them complete.
 - **Code Exploration** -- A semantic code graph built from Tree-sitter AST parsing and LSP cross-references. Agents look up symbol definitions, list file symbols, and analyze change impact before modifying code. Supports Go, Python, JavaScript, TypeScript, Lua, and Zig. Also captures and graphs LSP diagnostics across files.
 - **Python Sidecar** -- A local MLX-backed inference and embedding server. Powers embedding (replacing Ollama), LLM generation (`ask`, `exec`, `discover`), and self-correcting Python script execution via the Ralph-loop. Managed with `context0 --daemon`.
+- **Data Management** -- Four commands cover backup and portability: `backup` snapshots databases to `~/.context0/backup/`; `recover` restores the latest snapshot automatically; `export` packs databases into a portable `.tar.gz`; `import` restores from any `.tar.gz` after creating a safety snapshot.
 
 ## Quick start
 
@@ -59,7 +60,7 @@ Go, SQLite (FTS5 + sqlite-vec), Tree-sitter, LSP, Python (MLX + uv), cobra.
 
 ## Data storage
 
-All data lives in `~/.context0/<project-path>/` as SQLite files. Database names carry a `-ctx0` suffix for easy identification (e.g. `memory-ctx0.sqlite`, `agenda-ctx0.sqlite`, `<project>-ctx0.sqlite`). The sidecar socket and PID file live at `~/.context0/channel.sock` and `~/.context0/sidecar.pid`.
+All data lives in `~/.context0/<project-path>/` as SQLite files. Database names carry a `-ctx0` suffix for easy identification (e.g. `memory-ctx0.sqlite`, `agenda-ctx0.sqlite`, `<project>-ctx0.sqlite`). The sidecar socket and PID file live at `~/.context0/channel.sock` and `~/.context0/sidecar.pid`. Automatic backups are written to `~/.context0/backup/<project>/`.
 
 ## License
 

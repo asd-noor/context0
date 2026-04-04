@@ -12,6 +12,7 @@ import (
 	cmdask "context0/cmd/ask"
 	cmdbackup "context0/cmd/backup"
 	cmdcodemap "context0/cmd/codemap"
+	cmddocslib "context0/cmd/docs-lib"
 	cmdexec "context0/cmd/exec"
 	cmdexport "context0/cmd/export"
 	cmdimport "context0/cmd/import"
@@ -102,6 +103,7 @@ It provides:
 		cmdrecover.NewCmd(&projectDir),
 		cmdexport.NewCmd(&projectDir),
 		cmdimport.NewCmd(&projectDir),
+		cmddocslib.NewCmd(&projectDir),
 	)
 
 	if err := root.Execute(); err != nil {

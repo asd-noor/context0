@@ -54,6 +54,12 @@ Each command is a JSON array of string tokens:
     ["codemap", "status"]
       → index health: node/edge counts, last updated
 
+  Library documentation (Context7 — live, up-to-date):
+    ["docs-lib", "<library-name>", "<specific question or topic>"]
+      → fetch official docs for any library, framework, or tool
+      → use when the query is about a specific external dependency,
+        API, or how to use a particular library feature
+
 RULES
 - Return a JSON array of at most 4 commands.
 - Choose only the commands genuinely needed — omit anything speculative.

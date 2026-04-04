@@ -52,6 +52,14 @@ Response: {"ok": true,  "output": "<result>"}
         | {"ok": false, "error": "<message>", "output": "<partial output>"}
 """
 
+CMD_CONTEXT7 = "context7"
+"""Fetch library documentation from Context7 via the MCP HTTP protocol.
+Request:  {"cmd": "context7", "library": "<name>", "query": "<question>",
+           "tokens": 5000}
+Response: {"ok": true, "docs": "<markdown>", "library_id": "<id>"}
+        | {"ok": false, "error": "<message>"}
+"""
+
 # ---------------------------------------------------------------------------
 # Model defaults  (overridable via environment variables)
 # ---------------------------------------------------------------------------

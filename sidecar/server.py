@@ -32,12 +32,14 @@ from .protocol import (
     CMD_ASK,
     CMD_EXEC,
     CMD_DISCOVER,
+    CMD_CONTEXT7,
 )
 from .embed import EmbedEngine
 from .inference import InferenceEngine
 from .ralph import ralph_exec, strip_fences
 from .ask import ask as _ask_handler
 from .prompts import DISCOVER_SYSTEM, DISCOVER_USER
+from . import context7 as _context7
 
 log = logging.getLogger(__name__)
 
@@ -246,6 +248,33 @@ class SidecarServer:
             if err:
                 return {"ok": False, "error": err, "output": output}
             return {"ok": True, "output": output}
+
+        # ---- context7 --------------------------------------------------
+        if cmd == CMD_CONTEXT7:
+            library: str = req.get("library", "")
+            query_c7: str = req.get("query", "")
+            tokens_c7: int = int(req.get("tokens", 5000))
+
+            if not library:
+                return {"ok": False, "error": "context7: 'library' field is required"}
+            if not query_c7:
+                return {"ok": False, "error": "context7: 'query' field is required"}
+
+            # Pure HTTP — no model lock needed.  Run in executor to avoid
+            # blocking the event loop on network I/O.
+            try:
+
+                def _fetch() -> tuple[str, str]:
+                    lib_id = _context7.resolve_library(library, query_c7)
+                    docs = _context7.get_docs(lib_id, query_c7, tokens_c7)
+                    return lib_id, docs
+
+                lib_id, docs = await loop.run_in_executor(None, _fetch)
+            except _context7.Context7Error as exc:
+                return {"ok": False, "error": str(exc)}
+            except Exception as exc:
+                return {"ok": False, "error": f"context7: unexpected error: {exc}"}
+            return {"ok": True, "docs": docs, "library_id": lib_id}
 
         return {"ok": False, "error": f"unknown command: {cmd!r}"}
 

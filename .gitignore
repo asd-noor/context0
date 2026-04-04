@@ -4,6 +4,9 @@
 .gomodcache/
 .mise-cache/
 
+# Project-local Go caches (not to be committed)
+sidecar/__pycache__/
+
 # Local mise state
 .mise/
 

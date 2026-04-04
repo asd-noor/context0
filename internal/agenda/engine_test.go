@@ -60,7 +60,7 @@ func TestTaskStatusConstants(t *testing.T) {
 func TestNewTasksArePending(t *testing.T) {
 	eng := openTestEngine(t)
 
-	id, err := eng.CreateAgenda("test", "desc", "", []agenda.TaskInput{
+	id, err := eng.CreateAgenda("test", "desc", "", "", []agenda.TaskInput{
 		{Details: "task one"},
 		{Details: "task two"},
 	})
@@ -72,9 +72,9 @@ func TestNewTasksArePending(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAgenda: %v", err)
 	}
-	for _, task := range a.Tasks {
+	for i, task := range a.Tasks {
 		if task.Status != agenda.StatusPending {
-			t.Errorf("task %d: expected status %q, got %q", task.TaskOrder+1, agenda.StatusPending, task.Status)
+			t.Errorf("task #%d: expected status %q, got %q", i+1, agenda.StatusPending, task.Status)
 		}
 	}
 }
@@ -84,7 +84,7 @@ func TestNewTasksArePending(t *testing.T) {
 func TestStatusTransitions(t *testing.T) {
 	eng := openTestEngine(t)
 
-	id, err := eng.CreateAgenda("transitions", "desc", "", []agenda.TaskInput{
+	id, err := eng.CreateAgenda("transitions", "desc", "", "", []agenda.TaskInput{
 		{Details: "alpha"},
 	})
 	if err != nil {
@@ -118,7 +118,7 @@ func TestStatusTransitions(t *testing.T) {
 func TestInvalidStatusRejected(t *testing.T) {
 	eng := openTestEngine(t)
 
-	id, err := eng.CreateAgenda("invalid", "desc", "", []agenda.TaskInput{
+	id, err := eng.CreateAgenda("invalid", "desc", "", "", []agenda.TaskInput{
 		{Details: "task"},
 	})
 	if err != nil {
@@ -141,9 +141,9 @@ func TestInvalidStatusRejected(t *testing.T) {
 func TestAutoDeactivationOnAllCompleted(t *testing.T) {
 	eng := openTestEngine(t)
 
-	id, err := eng.CreateAgenda("auto-deactivate", "desc", "", []agenda.TaskInput{
-		{Details: "required 1"},
-		{Details: "required 2"},
+	id, err := eng.CreateAgenda("auto-deactivate", "desc", "", "", []agenda.TaskInput{
+		{Details: "task 1"},
+		{Details: "task 2"},
 	})
 	if err != nil {
 		t.Fatalf("CreateAgenda: %v", err)
@@ -158,7 +158,7 @@ func TestAutoDeactivationOnAllCompleted(t *testing.T) {
 		t.Fatal("agenda deactivated too early (task 2 still pending)")
 	}
 
-	// Mark first task in_progress then back to completed — agenda still active.
+	// Mark second task in_progress — agenda still active.
 	if err := eng.UpdateTaskByOrder(id, 1, agenda.StatusInProgress); err != nil {
 		t.Fatalf("UpdateTaskByOrder task 1 in_progress: %v", err)
 	}
@@ -167,45 +167,20 @@ func TestAutoDeactivationOnAllCompleted(t *testing.T) {
 		t.Fatal("agenda should remain active while task is in_progress")
 	}
 
-	// Now complete the second task — agenda should deactivate.
+	// Complete the second task — agenda should deactivate.
 	if err := eng.UpdateTaskByOrder(id, 1, agenda.StatusCompleted); err != nil {
 		t.Fatalf("UpdateTaskByOrder task 1 completed: %v", err)
 	}
 	a, _ = eng.GetAgenda(id)
 	if a.IsActive {
-		t.Fatal("agenda should have been deactivated when all required tasks are completed")
-	}
-}
-
-func TestAutoDeactivationIgnoresOptionalTasks(t *testing.T) {
-	eng := openTestEngine(t)
-
-	id, err := eng.CreateAgenda("optional-skip", "desc", "", []agenda.TaskInput{
-		{Details: "required"},
-		{Details: "optional", IsOptional: true},
-	})
-	if err != nil {
-		t.Fatalf("CreateAgenda: %v", err)
-	}
-
-	// Completing only the required task should deactivate the agenda even
-	// though the optional task is still pending.
-	if err := eng.UpdateTaskByOrder(id, 0, agenda.StatusCompleted); err != nil {
-		t.Fatalf("UpdateTaskByOrder required task: %v", err)
-	}
-	a, err := eng.GetAgenda(id)
-	if err != nil {
-		t.Fatalf("GetAgenda: %v", err)
-	}
-	if a.IsActive {
-		t.Fatal("agenda should deactivate when all required (non-optional) tasks are completed")
+		t.Fatal("agenda should have been deactivated when all tasks are completed")
 	}
 }
 
 func TestInProgressDoesNotTriggerDeactivation(t *testing.T) {
 	eng := openTestEngine(t)
 
-	id, err := eng.CreateAgenda("in-progress-guard", "desc", "", []agenda.TaskInput{
+	id, err := eng.CreateAgenda("in-progress-guard", "desc", "", "", []agenda.TaskInput{
 		{Details: "task A"},
 		{Details: "task B"},
 	})
@@ -240,7 +215,7 @@ func TestSchemaMigration_AddStatusColumn(t *testing.T) {
 	// We then verify the status column exists and works correctly.
 	eng := openTestEngineAt(t, dir)
 
-	id, err := eng.CreateAgenda("migration-test", "desc", "", []agenda.TaskInput{
+	id, err := eng.CreateAgenda("migration-test", "desc", "", "", []agenda.TaskInput{
 		{Details: "legacy task"},
 	})
 	if err != nil {
@@ -261,7 +236,59 @@ func TestSchemaMigration_AddStatusColumn(t *testing.T) {
 	}
 	// Agenda should have auto-deactivated.
 	if a.IsActive {
-		t.Error("agenda should be deactivated after all required tasks completed")
+		t.Error("agenda should be deactivated after all tasks completed")
+	}
+}
+
+// ---- GitBranch ----------------------------------------------------------
+
+func TestGitBranchStored(t *testing.T) {
+	eng := openTestEngine(t)
+
+	id, err := eng.CreateAgenda("branch-test", "desc", "", "feature/xyz", []agenda.TaskInput{
+		{Details: "task"},
+	})
+	if err != nil {
+		t.Fatalf("CreateAgenda: %v", err)
+	}
+
+	a, err := eng.GetAgenda(id)
+	if err != nil {
+		t.Fatalf("GetAgenda: %v", err)
+	}
+	if a.GitBranch != "feature/xyz" {
+		t.Errorf("GitBranch: want %q, got %q", "feature/xyz", a.GitBranch)
+	}
+}
+
+func TestListAgendasBranchFilter(t *testing.T) {
+	eng := openTestEngine(t)
+
+	_, err := eng.CreateAgenda("on-main", "desc", "", "main", nil)
+	if err != nil {
+		t.Fatalf("CreateAgenda main: %v", err)
+	}
+	_, err = eng.CreateAgenda("on-feature", "desc", "", "feature/foo", nil)
+	if err != nil {
+		t.Fatalf("CreateAgenda feature: %v", err)
+	}
+
+	// Filter to main only.
+	plans, err := eng.ListAgendas(true, "main")
+	if err != nil {
+		t.Fatalf("ListAgendas: %v", err)
+	}
+	if len(plans) != 1 || plans[0].Title != "on-main" {
+		t.Errorf("expected 1 plan on main, got %d: %v", len(plans), plans)
+	}
+
+	// No filter — both visible.
+	all, err := eng.ListAgendas(true, "")
+	if err != nil {
+		t.Fatalf("ListAgendas all: %v", err)
+	}
+	if len(all) != 2 {
+		t.Errorf("expected 2 plans, got %d", len(all))
 	}
 }
 
@@ -270,17 +297,14 @@ func TestSchemaMigration_AddStatusColumn(t *testing.T) {
 func TestAddTask(t *testing.T) {
 	eng := openTestEngine(t)
 
-	id, err := eng.CreateAgenda("addtask-test", "desc", "", []agenda.TaskInput{
+	id, err := eng.CreateAgenda("addtask-test", "desc", "", "", []agenda.TaskInput{
 		{Details: "initial"},
 	})
 	if err != nil {
 		t.Fatalf("CreateAgenda: %v", err)
 	}
 
-	taskID, err := eng.AddTask(id, agenda.TaskInput{
-		Details:    "appended",
-		IsOptional: true,
-	})
+	taskID, err := eng.AddTask(id, agenda.TaskInput{Details: "appended"})
 	if err != nil {
 		t.Fatalf("AddTask: %v", err)
 	}
@@ -298,9 +322,6 @@ func TestAddTask(t *testing.T) {
 	added := a.Tasks[1]
 	if added.Details != "appended" {
 		t.Errorf("Details: want %q, got %q", "appended", added.Details)
-	}
-	if !added.IsOptional {
-		t.Error("IsOptional: want true, got false")
 	}
 	if added.Status != agenda.StatusPending {
 		t.Errorf("Status: want %q, got %q", agenda.StatusPending, added.Status)
@@ -321,7 +342,7 @@ func TestAddTaskNotFound(t *testing.T) {
 func TestUpdateAgendaNewTasksPending(t *testing.T) {
 	eng := openTestEngine(t)
 
-	id, err := eng.CreateAgenda("append-test", "desc", "", []agenda.TaskInput{
+	id, err := eng.CreateAgenda("append-test", "desc", "", "", []agenda.TaskInput{
 		{Details: "original"},
 	})
 	if err != nil {
@@ -341,9 +362,9 @@ func TestUpdateAgendaNewTasksPending(t *testing.T) {
 	if len(a.Tasks) != 2 {
 		t.Fatalf("expected 2 tasks, got %d", len(a.Tasks))
 	}
-	for _, task := range a.Tasks {
+	for i, task := range a.Tasks {
 		if task.Status != agenda.StatusPending {
-			t.Errorf("task %d: expected pending, got %q", task.TaskOrder+1, task.Status)
+			t.Errorf("task #%d: expected pending, got %q", i+1, task.Status)
 		}
 	}
 }

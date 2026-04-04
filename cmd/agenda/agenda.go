@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -13,6 +14,21 @@ import (
 
 	"context0/internal/agenda"
 )
+
+// currentGitBranch returns the name of the current git branch for dir, or ""
+// if it cannot be determined (not a repo, git not installed, detached HEAD,
+// etc.).
+func currentGitBranch(dir string) string {
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil {
+		return ""
+	}
+	branch := strings.TrimSpace(string(out))
+	if branch == "HEAD" { // detached HEAD
+		return ""
+	}
+	return branch
+}
 
 // NewCmd returns the `agenda` sub-command tree.
 func NewCmd(projectDir *string) *cobra.Command {
@@ -52,6 +68,7 @@ func newPlanCmd(projectDir *string) *cobra.Command {
 
 func newPlanListCmd(projectDir *string) *cobra.Command {
 	var all bool
+	var branch string
 
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -63,7 +80,7 @@ func newPlanListCmd(projectDir *string) *cobra.Command {
 			}
 			defer eng.Close()
 
-			plans, err := eng.ListAgendas(!all)
+			plans, err := eng.ListAgendas(!all, branch)
 			if err != nil {
 				return err
 			}
@@ -73,7 +90,7 @@ func newPlanListCmd(projectDir *string) *cobra.Command {
 			}
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "ID\tACTIVE\tTITLE\tDESCRIPTION")
+			fmt.Fprintln(w, "ID\tACTIVE\tBRANCH\tTITLE\tDESCRIPTION")
 			for _, a := range plans {
 				active := "yes"
 				if !a.IsActive {
@@ -83,7 +100,7 @@ func newPlanListCmd(projectDir *string) *cobra.Command {
 				if len(desc) > 60 {
 					desc = desc[:57] + "..."
 				}
-				fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", a.ID, active, a.Title, desc)
+				fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n", a.ID, active, a.GitBranch, a.Title, desc)
 			}
 			w.Flush()
 			return nil
@@ -91,6 +108,7 @@ func newPlanListCmd(projectDir *string) *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&all, "all", false, "Include inactive plans")
+	cmd.Flags().StringVar(&branch, "branch", "", "Filter by git branch (empty = all branches)")
 	return cmd
 }
 
@@ -144,15 +162,14 @@ func newPlanGetCmd(projectDir *string) *cobra.Command {
 			if a.AcceptanceGuard != "" {
 				fmt.Printf("  Completion Condition: %s\n", a.AcceptanceGuard)
 			}
+			if a.GitBranch != "" {
+				fmt.Printf("  Branch: %s\n", a.GitBranch)
+			}
 			fmt.Printf("  Created: %s\n", a.CreatedAt.Format("2006-01-02 15:04:05"))
 			fmt.Printf("  Tasks (%d):\n", len(a.Tasks))
-			for _, t := range a.Tasks {
+			for i, t := range a.Tasks {
 				symbol := taskStatusSymbol(t.Status)
-				opt := ""
-				if t.IsOptional {
-					opt = " (optional)"
-				}
-				fmt.Printf("    %s #%d%s: %s\n", symbol, t.TaskOrder+1, opt, t.Details)
+				fmt.Printf("    %s #%d: %s\n", symbol, i+1, t.Details)
 			}
 			return nil
 		},
@@ -162,9 +179,8 @@ func newPlanGetCmd(projectDir *string) *cobra.Command {
 // --- plan create ---
 
 func newPlanCreateCmd(projectDir *string) *cobra.Command {
-	var title, description, guard string
+	var title, description, guard, branch string
 	var taskDetails []string
-	var taskOptional []bool
 
 	cmd := &cobra.Command{
 		Use:   "create",
@@ -176,16 +192,17 @@ func newPlanCreateCmd(projectDir *string) *cobra.Command {
 			}
 			defer eng.Close()
 
-			tasks := make([]agenda.TaskInput, len(taskDetails))
-			for i, d := range taskDetails {
-				optional := false
-				if i < len(taskOptional) {
-					optional = taskOptional[i]
-				}
-				tasks[i] = agenda.TaskInput{Details: d, IsOptional: optional}
+			// Auto-detect git branch from the project directory if not provided.
+			if branch == "" {
+				branch = currentGitBranch(*projectDir)
 			}
 
-			id, err := eng.CreateAgenda(title, description, guard, tasks)
+			tasks := make([]agenda.TaskInput, len(taskDetails))
+			for i, d := range taskDetails {
+				tasks[i] = agenda.TaskInput{Details: d}
+			}
+
+			id, err := eng.CreateAgenda(title, description, guard, branch, tasks)
 			if err != nil {
 				return err
 			}
@@ -197,8 +214,8 @@ func newPlanCreateCmd(projectDir *string) *cobra.Command {
 	cmd.Flags().StringVarP(&title, "title", "t", "", "Plan title")
 	cmd.Flags().StringVarP(&description, "description", "d", "", "Plan description")
 	cmd.Flags().StringVar(&guard, "guard", "", "Acceptance criteria (done-when condition)")
+	cmd.Flags().StringVar(&branch, "branch", "", "Git branch to associate (default: auto-detect from project dir)")
 	cmd.Flags().StringArrayVarP(&taskDetails, "task", "T", nil, "Task details (repeat for multiple tasks)")
-	cmd.Flags().BoolSliceVar(&taskOptional, "task-optional", nil, "Mark corresponding task as optional (repeat to match --task order)")
 	return cmd
 }
 
@@ -206,10 +223,11 @@ func newPlanCreateCmd(projectDir *string) *cobra.Command {
 
 func newPlanSearchCmd(projectDir *string) *cobra.Command {
 	var limit int
+	var branch string
 
 	cmd := &cobra.Command{
 		Use:   "search <query>",
-		Short: "Full-text search across plan titles and descriptions",
+		Short: "Full-text search across plan titles, descriptions, and acceptance criteria",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := agenda.New(*projectDir)
@@ -218,7 +236,7 @@ func newPlanSearchCmd(projectDir *string) *cobra.Command {
 			}
 			defer eng.Close()
 
-			results, err := eng.SearchAgendas(strings.Join(args, " "), limit)
+			results, err := eng.SearchAgendas(strings.Join(args, " "), limit, branch)
 			if err != nil {
 				return err
 			}
@@ -228,7 +246,7 @@ func newPlanSearchCmd(projectDir *string) *cobra.Command {
 			}
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "ID\tACTIVE\tTITLE\tDESCRIPTION")
+			fmt.Fprintln(w, "ID\tACTIVE\tBRANCH\tTITLE\tDESCRIPTION")
 			for _, a := range results {
 				active := "yes"
 				if !a.IsActive {
@@ -238,7 +256,7 @@ func newPlanSearchCmd(projectDir *string) *cobra.Command {
 				if len(desc) > 60 {
 					desc = desc[:57] + "..."
 				}
-				fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", a.ID, active, a.Title, desc)
+				fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n", a.ID, active, a.GitBranch, a.Title, desc)
 			}
 			w.Flush()
 			return nil
@@ -246,6 +264,7 @@ func newPlanSearchCmd(projectDir *string) *cobra.Command {
 	}
 
 	cmd.Flags().IntVarP(&limit, "limit", "l", 10, "Max results")
+	cmd.Flags().StringVar(&branch, "branch", "", "Filter by git branch (empty = all branches)")
 	return cmd
 }
 
@@ -296,7 +315,7 @@ func newPlanUpdateCmd(projectDir *string) *cobra.Command {
 	cmd.Flags().StringVarP(&description, "description", "d", "", "New description")
 	cmd.Flags().StringVar(&guard, "guard", "", "New acceptance criteria (done-when condition)")
 	cmd.Flags().BoolVar(&deactivate, "deactivate", false, "Mark plan as inactive")
-	cmd.Flags().StringVar(&newTasksJSON, "tasks", "", `JSON array of tasks to append, e.g. '[{"Details":"...","IsOptional":false}]'`)
+	cmd.Flags().StringVar(&newTasksJSON, "tasks", "", `JSON array of tasks to append, e.g. '[{"Details":"..."}]'`)
 	return cmd
 }
 
@@ -350,7 +369,6 @@ func newTaskCmd(projectDir *string) *cobra.Command {
 
 func newTaskAddCmd(projectDir *string) *cobra.Command {
 	var details string
-	var optional bool
 
 	cmd := &cobra.Command{
 		Use:   "add <plan-id>",
@@ -371,10 +389,7 @@ func newTaskAddCmd(projectDir *string) *cobra.Command {
 			}
 			defer eng.Close()
 
-			taskID, err := eng.AddTask(planID, agenda.TaskInput{
-				Details:    details,
-				IsOptional: optional,
-			})
+			taskID, err := eng.AddTask(planID, agenda.TaskInput{Details: details})
 			if err != nil {
 				return err
 			}
@@ -384,7 +399,6 @@ func newTaskAddCmd(projectDir *string) *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&details, "details", "T", "", "Task details (required)")
-	cmd.Flags().BoolVar(&optional, "optional", false, "Mark task as optional")
 	return cmd
 }
 

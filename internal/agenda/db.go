@@ -18,6 +18,7 @@ PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS agendas (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     is_active        INTEGER NOT NULL DEFAULT 1,
+    git_branch       TEXT    NOT NULL DEFAULT '',
     title            TEXT,
     description      TEXT,
     acceptance_guard TEXT,
@@ -25,38 +26,36 @@ CREATE TABLE IF NOT EXISTS agendas (
 );
 
 CREATE TABLE IF NOT EXISTS tasks (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    agenda_id    INTEGER NOT NULL,
-    task_order   INTEGER NOT NULL DEFAULT 0,
-    is_optional  INTEGER NOT NULL DEFAULT 0,
-    details      TEXT    NOT NULL,
-    is_completed INTEGER NOT NULL DEFAULT 0,
-    status       TEXT    NOT NULL DEFAULT 'pending',
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    agenda_id INTEGER NOT NULL,
+    details   TEXT    NOT NULL,
+    status    TEXT    NOT NULL DEFAULT 'pending',
     FOREIGN KEY (agenda_id) REFERENCES agendas(id) ON DELETE CASCADE
 );
 
 CREATE VIRTUAL TABLE IF NOT EXISTS agendas_fts USING fts5(
     title,
     description,
+    acceptance_guard,
     content='agendas',
     content_rowid='id'
 );
 
 CREATE TRIGGER IF NOT EXISTS agendas_fts_insert AFTER INSERT ON agendas BEGIN
-    INSERT INTO agendas_fts(rowid, title, description)
-    VALUES (new.id, new.title, new.description);
+    INSERT INTO agendas_fts(rowid, title, description, acceptance_guard)
+    VALUES (new.id, new.title, new.description, new.acceptance_guard);
 END;
 
 CREATE TRIGGER IF NOT EXISTS agendas_fts_delete AFTER DELETE ON agendas BEGIN
-    INSERT INTO agendas_fts(agendas_fts, rowid, title, description)
-    VALUES ('delete', old.id, old.title, old.description);
+    INSERT INTO agendas_fts(agendas_fts, rowid, title, description, acceptance_guard)
+    VALUES ('delete', old.id, old.title, old.description, old.acceptance_guard);
 END;
 
 CREATE TRIGGER IF NOT EXISTS agendas_fts_update AFTER UPDATE ON agendas BEGIN
-    INSERT INTO agendas_fts(agendas_fts, rowid, title, description)
-    VALUES ('delete', old.id, old.title, old.description);
-    INSERT INTO agendas_fts(rowid, title, description)
-    VALUES (new.id, new.title, new.description);
+    INSERT INTO agendas_fts(agendas_fts, rowid, title, description, acceptance_guard)
+    VALUES ('delete', old.id, old.title, old.description, old.acceptance_guard);
+    INSERT INTO agendas_fts(rowid, title, description, acceptance_guard)
+    VALUES (new.id, new.title, new.description, new.acceptance_guard);
 END;
 `
 

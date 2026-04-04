@@ -20,6 +20,7 @@ import (
 
 	"context0/internal/graph"
 	"context0/internal/pkgmgr"
+	"context0/internal/scanner"
 )
 
 const (
@@ -43,18 +44,6 @@ var languageServers = []langServer{
 	{langID: "typescript", binary: "typescript-language-server", args: []string{"--stdio"}},
 	{langID: "lua", binary: "lua-language-server", args: []string{"--stdio"}},
 	{langID: "zig", binary: "zls", args: nil},
-}
-
-// extToLangID maps file extensions to language IDs.
-var extToLangID = map[string]string{
-	".go":  "go",
-	".py":  "python",
-	".js":  "javascript",
-	".jsx": "javascript",
-	".ts":  "typescript",
-	".tsx": "typescript",
-	".lua": "lua",
-	".zig": "zig",
 }
 
 // incomingMessage is used internally to parse any LSP message from the server.
@@ -81,7 +70,8 @@ type Client struct {
 	nextID    atomic.Int32
 	rootURI   string
 	startAt   time.Time
-	diagStore sync.Map // key: URI (string) → value: []Diagnostic
+	diagStore sync.Map       // key: URI (string) → value: []Diagnostic
+	openFiles map[string]int // ref-count of open documents; guarded by mu
 }
 
 // newClient starts the given language server binary and performs the
@@ -104,11 +94,12 @@ func newClient(ctx context.Context, binary string, args []string, rootDir string
 
 	absRoot, _ := filepath.Abs(rootDir)
 	c := &Client{
-		cmd:     cmd,
-		stdin:   stdin,
-		reader:  bufio.NewReaderSize(stdout, 1<<20),
-		rootURI: PathToURI(absRoot),
-		startAt: time.Now(),
+		cmd:       cmd,
+		stdin:     stdin,
+		reader:    bufio.NewReaderSize(stdout, 1<<20),
+		rootURI:   PathToURI(absRoot),
+		startAt:   time.Now(),
+		openFiles: make(map[string]int),
 	}
 
 	if err := c.initialize(ctx); err != nil {
@@ -253,6 +244,33 @@ func (c *Client) didClose(uri string) error {
 	return c.notify("textDocument/didClose", DidCloseTextDocumentParams{
 		TextDocument: TextDocumentIdentifier{URI: uri},
 	})
+}
+
+// openFile increments the open ref-count for uri. The actual didOpen
+// notification is sent only the first time (count goes 0 → 1). Subsequent
+// workers that need the same file just increment the counter. Caller must NOT
+// hold c.mu.
+func (c *Client) openFile(uri, langID, text string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.openFiles[uri]++
+	if c.openFiles[uri] == 1 {
+		return c.didOpen(uri, langID, text)
+	}
+	return nil
+}
+
+// closeFile decrements the open ref-count for uri. The actual didClose
+// notification is sent only when the count reaches zero. Caller must NOT
+// hold c.mu.
+func (c *Client) closeFile(uri string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.openFiles[uri]--
+	if c.openFiles[uri] <= 0 {
+		delete(c.openFiles, uri)
+		c.didClose(uri) //nolint:errcheck
+	}
 }
 
 // references calls textDocument/references for the given position.
@@ -405,7 +423,7 @@ func (s *Service) Enrich(ctx context.Context, nodes []graph.Node, store *graph.S
 	byLang := make(map[string][]graph.Node)
 	for _, n := range nodes {
 		ext := filepath.Ext(n.FilePath)
-		langID, ok := extToLangID[ext]
+		langID, ok := scanner.LangIDForExt(ext)
 		if !ok {
 			continue
 		}
@@ -494,18 +512,13 @@ func (s *Service) enrichNode(ctx context.Context, c *Client, langID string, n gr
 		return nil
 	}
 
-	// Open the file in the language server.
-	c.mu.Lock()
-	if err := c.didOpen(uri, langID, string(text)); err != nil {
-		c.mu.Unlock()
+	// Open the file in the language server. Ref-counted: didOpen is sent only
+	// the first time this URI is seen by any worker; didClose fires only after
+	// the last worker processing a node in this file calls closeFile.
+	if err := c.openFile(uri, langID, string(text)); err != nil {
 		return nil
 	}
-	c.mu.Unlock()
-	defer func() {
-		c.mu.Lock()
-		c.didClose(uri) //nolint:errcheck
-		c.mu.Unlock()
-	}()
+	defer c.closeFile(uri)
 
 	// Use the position of the name identifier (0-indexed for LSP).
 	// NameLine/NameCol point at the symbol name token, which gopls requires

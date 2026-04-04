@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS nodes (
     id         TEXT PRIMARY KEY,
     name       TEXT NOT NULL,
     kind       TEXT NOT NULL,
+    language   TEXT NOT NULL DEFAULT '',
     file_path  TEXT NOT NULL,
     line_start INTEGER NOT NULL,
     line_end   INTEGER NOT NULL,
@@ -37,8 +38,8 @@ CREATE TABLE IF NOT EXISTS nodes (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_nodes_file_path ON nodes(file_path);
-CREATE INDEX IF NOT EXISTS idx_nodes_name      ON nodes(name);
+CREATE INDEX IF NOT EXISTS idx_nodes_file_path  ON nodes(file_path);
+CREATE INDEX IF NOT EXISTS idx_nodes_name_lang  ON nodes(name, language);
 
 CREATE TABLE IF NOT EXISTS edges (
     source_id  TEXT NOT NULL,
@@ -146,8 +147,8 @@ func (s *Store) BulkUpsertNodes(ctx context.Context, nodes []Node) error {
 
 	stmt, err := tx.PrepareContext(ctx,
 		`INSERT OR REPLACE INTO nodes
-		 (id, name, kind, file_path, line_start, line_end, col_start, col_end, name_line, name_col, symbol_uri)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 (id, name, kind, language, file_path, line_start, line_end, col_start, col_end, name_line, name_col, symbol_uri)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return err
@@ -156,7 +157,7 @@ func (s *Store) BulkUpsertNodes(ctx context.Context, nodes []Node) error {
 
 	for _, n := range nodes {
 		if _, err := stmt.ExecContext(ctx,
-			n.ID, n.Name, n.Kind, n.FilePath,
+			n.ID, n.Name, n.Kind, n.Language, n.FilePath,
 			n.LineStart, n.LineEnd, n.ColStart, n.ColEnd, n.NameLine, n.NameCol, n.SymbolURI,
 		); err != nil {
 			return err
@@ -195,7 +196,7 @@ func (s *Store) BulkUpsertEdges(ctx context.Context, edges []Edge) error {
 // GetSymbolsInFile returns all nodes for the given file path, ordered by line_start.
 func (s *Store) GetSymbolsInFile(ctx context.Context, filePath string) ([]Node, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, kind, file_path, line_start, line_end, col_start, col_end, name_line, name_col, COALESCE(symbol_uri,'')
+		`SELECT id, name, kind, language, file_path, line_start, line_end, col_start, col_end, name_line, name_col, COALESCE(symbol_uri,'')
 		 FROM nodes WHERE file_path = ? ORDER BY line_start`,
 		filePath,
 	)
@@ -206,13 +207,27 @@ func (s *Store) GetSymbolsInFile(ctx context.Context, filePath string) ([]Node, 
 	return scanNodes(rows)
 }
 
-// GetSymbolLocation returns all nodes matching the given name, ordered by file_path.
-func (s *Store) GetSymbolLocation(ctx context.Context, name string) ([]Node, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, kind, file_path, line_start, line_end, col_start, col_end, name_line, name_col, COALESCE(symbol_uri,'')
-		 FROM nodes WHERE name = ? ORDER BY file_path`,
-		name,
+// GetSymbolLocation returns all nodes matching the given name, ordered by
+// file_path. If lang is non-empty (e.g. "go") only nodes for that language are
+// returned; the composite (name, language) index makes both paths efficient.
+func (s *Store) GetSymbolLocation(ctx context.Context, name, lang string) ([]Node, error) {
+	var (
+		rows *sql.Rows
+		err  error
 	)
+	if lang != "" {
+		rows, err = s.db.QueryContext(ctx,
+			`SELECT id, name, kind, language, file_path, line_start, line_end, col_start, col_end, name_line, name_col, COALESCE(symbol_uri,'')
+			 FROM nodes WHERE name = ? AND language = ? ORDER BY file_path`,
+			name, lang,
+		)
+	} else {
+		rows, err = s.db.QueryContext(ctx,
+			`SELECT id, name, kind, language, file_path, line_start, line_end, col_start, col_end, name_line, name_col, COALESCE(symbol_uri,'')
+			 FROM nodes WHERE name = ? ORDER BY file_path`,
+			name,
+		)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +239,7 @@ func (s *Store) GetSymbolLocation(ctx context.Context, name string) ([]Node, err
 // "Smallest" means the node with the smallest (line_end - line_start) span.
 func (s *Store) FindNode(ctx context.Context, filePath string, line, col int) (*Node, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, name, kind, file_path, line_start, line_end, col_start, col_end, name_line, name_col, COALESCE(symbol_uri,'')
+		`SELECT id, name, kind, language, file_path, line_start, line_end, col_start, col_end, name_line, name_col, COALESCE(symbol_uri,'')
 		 FROM nodes
 		 WHERE file_path = ?
 		   AND line_start <= ?
@@ -234,7 +249,7 @@ func (s *Store) FindNode(ctx context.Context, filePath string, line, col int) (*
 		filePath, line, line,
 	)
 	n := &Node{}
-	err := row.Scan(&n.ID, &n.Name, &n.Kind, &n.FilePath,
+	err := row.Scan(&n.ID, &n.Name, &n.Kind, &n.Language, &n.FilePath,
 		&n.LineStart, &n.LineEnd, &n.ColStart, &n.ColEnd, &n.NameLine, &n.NameCol, &n.SymbolURI)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -258,7 +273,7 @@ func (s *Store) FindImpact(ctx context.Context, symbolName string) ([]Node, erro
 		    FROM edges e
 		    INNER JOIN impacted i ON e.target_id = i.source_id
 		)
-		SELECT DISTINCT n.id, n.name, n.kind, n.file_path,
+		SELECT DISTINCT n.id, n.name, n.kind, n.language, n.file_path,
 		                n.line_start, n.line_end, n.col_start, n.col_end,
 		                n.name_line, n.name_col,
 		                COALESCE(n.symbol_uri,'')
@@ -335,7 +350,7 @@ func scanNodes(rows *sql.Rows) ([]Node, error) {
 	var nodes []Node
 	for rows.Next() {
 		var n Node
-		if err := rows.Scan(&n.ID, &n.Name, &n.Kind, &n.FilePath,
+		if err := rows.Scan(&n.ID, &n.Name, &n.Kind, &n.Language, &n.FilePath,
 			&n.LineStart, &n.LineEnd, &n.ColStart, &n.ColEnd, &n.NameLine, &n.NameCol, &n.SymbolURI); err != nil {
 			return nil, err
 		}

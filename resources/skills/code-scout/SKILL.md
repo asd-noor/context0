@@ -81,7 +81,7 @@ Before changing any public symbol, run `impact` to understand the blast radius:
 context0 codemap impact QueryMemory
 ```
 
-This performs a recursive reverse traversal of the edge graph, returning all symbols that directly or transitively depend on the target. Edge relations traversed: `calls`, `implements`, `references`, `imports`.
+This performs a recursive reverse traversal of the edge graph, returning all symbols that directly or transitively depend on the target. Edge relations traversed: `implements`, `references`.
 
 ### Manual indexing (last resort)
 
@@ -101,7 +101,7 @@ Do not use `index` as a routine step — the daemon handles indexing automatical
 - Node ID: `SHA256(filePath:name:kind)[:16]` — stable 32-char hex
 - Supported languages: Go (`.go`), Python (`.py`), JavaScript (`.js`, `.jsx`), TypeScript (`.ts`, `.tsx`), Lua (`.lua`), Zig (`.zig`)
 - Extracted kinds: `function`, `method`, `type`, `class`, `interface`
-- Edge relations: `calls`, `implements`, `references`, `imports`
+- Edge relations: `implements`, `references`
 - Skipped paths: `vendor/`, `node_modules/`, `__pycache__/`, `.git/`, `zig-cache/`, `zig-out/`, generated files
 
 The index is built in two phases:

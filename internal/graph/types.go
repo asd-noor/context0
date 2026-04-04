@@ -4,10 +4,8 @@ package graph
 
 // Relation constants for Edge.Relation.
 const (
-	RelationCalls      = "calls"
 	RelationImplements = "implements"
 	RelationReferences = "references"
-	RelationImports    = "imports"
 )
 
 // Diagnostic severity constants (mirrors LSP DiagnosticSeverity).
@@ -41,6 +39,7 @@ type Node struct {
 	ID        string // stable SHA256 hash of (FilePath + ":" + Name + ":" + Kind)
 	Name      string
 	Kind      string // function | method | type | class | interface | ...
+	Language  string // LSP language ID (e.g. "go", "python"); set by the scanner
 	FilePath  string
 	LineStart int
 	LineEnd   int

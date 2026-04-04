@@ -45,6 +45,27 @@ var extToLang = map[string]langDef{
 	".zig": {lang: sitter.NewLanguage(tree_sitter_zig.Language()), query: queries["zig"], langID: "zig"},
 }
 
+// LangIDForExt returns the LSP language identifier for the given file extension
+// (e.g. ".go" → "go"). The second return value is false when the extension is
+// not recognised.
+func LangIDForExt(ext string) (string, bool) {
+	ld, ok := extToLang[strings.ToLower(ext)]
+	if !ok {
+		return "", false
+	}
+	return ld.langID, true
+}
+
+// IsKnownLang reports whether langID is a recognised LSP language identifier.
+func IsKnownLang(langID string) bool {
+	for _, ld := range extToLang {
+		if ld.langID == langID {
+			return true
+		}
+	}
+	return false
+}
+
 // generatedSuffixes lists file-name suffixes that indicate machine-generated code.
 var generatedSuffixes = []string{
 	".sql.go",
@@ -287,6 +308,7 @@ func (s *Scanner) ScanFile(ctx context.Context, path string) ([]graph.Node, erro
 			ID:        graph.NodeID(absPath, symbolName, defKind),
 			Name:      symbolName,
 			Kind:      defKind,
+			Language:  ld.langID,
 			FilePath:  absPath,
 			LineStart: int(start.Row) + 1, // Tree-sitter is 0-indexed
 			LineEnd:   int(end.Row) + 1,

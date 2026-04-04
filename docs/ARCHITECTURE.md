@@ -298,15 +298,18 @@ Two constructors:
 ### Schema (`<project>-ctx0.sqlite`)
 
 ```sql
-nodes (id TEXT PK, name TEXT, kind TEXT, file_path TEXT,
+nodes (id TEXT PK, name TEXT, kind TEXT, language TEXT,
+       file_path TEXT,
        line_start INT, line_end INT, col_start INT, col_end INT,
        name_line INT, name_col INT, symbol_uri TEXT)
 edges (source_id TEXT, target_id TEXT, relation TEXT)
 ```
 
 - **Node ID**: `SHA256(filePath:name:kind)[:16]` -- stable 32-char hex.
+- **`language`**: LSP language ID (`"go"`, `"python"`, etc.), set by the scanner from the file extension. Stored explicitly so language-filtered queries (`codemap find --lang go`) use an indexed equality check rather than a suffix `LIKE` scan on `file_path`.
 - **`name_line`/`name_col`**: position of the name identifier token. LSP enrichment uses these for cursor placement (not `line_start`/`col_start`, which point to the declaration keyword).
-- **Edge relations**: `calls`, `implements`, `references`, `imports`.
+- **Edge relations**: `implements`, `references`.
+- **Indexes**: `(file_path)` for `outline` and `FindNode`; composite `(name, language)` for `find` — covers both the unfiltered `WHERE name = ?` path and the filtered `WHERE name = ? AND language = ?` path via the leftmost-prefix rule.
 
 ### Database naming and `--src-root`
 

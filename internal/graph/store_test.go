@@ -218,7 +218,7 @@ func TestGetSymbolLocation(t *testing.T) {
 	}
 	_ = store.BulkUpsertNodes(ctx, nodes)
 
-	got, err := store.GetSymbolLocation(ctx, "MyFunc")
+	got, err := store.GetSymbolLocation(ctx, "MyFunc", "")
 	if err != nil {
 		t.Fatalf("GetSymbolLocation: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestGetSymbolLocationNotFound(t *testing.T) {
 	store := openTestStore(t)
 	ctx := context.Background()
 
-	got, err := store.GetSymbolLocation(ctx, "NoSuchSymbol")
+	got, err := store.GetSymbolLocation(ctx, "NoSuchSymbol", "")
 	if err != nil {
 		t.Fatalf("GetSymbolLocation: %v", err)
 	}

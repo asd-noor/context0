@@ -49,7 +49,7 @@ func (srv *Server) GetSymbolWithSource(ctx context.Context, name string, withSou
 	if err := srv.WaitForIndex(ctx); err != nil {
 		return nil, err
 	}
-	nodes, err := srv.store.GetSymbolLocation(ctx, name)
+	nodes, err := srv.store.GetSymbolLocation(ctx, name, "")
 	if err != nil {
 		return nil, err
 	}

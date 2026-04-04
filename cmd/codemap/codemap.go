@@ -29,6 +29,7 @@ import (
 	"context0/internal/daemon"
 	"context0/internal/db"
 	"context0/internal/graph"
+	"context0/internal/scanner"
 	"context0/internal/sidecar"
 )
 
@@ -335,20 +336,22 @@ func runSymbols(dir, srcRoot, filePath string, jsonOut bool) error {
 
 func newSymbolCmd(projectDir, srcRoot *string) *cobra.Command {
 	var withSource, jsonOut bool
+	var lang string
 	cmd := &cobra.Command{
 		Use:   "find <name>",
 		Short: "Locate all definitions of <name> across the project",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSymbol(*projectDir, *srcRoot, args[0], withSource, jsonOut)
+			return runSymbol(*projectDir, *srcRoot, args[0], lang, withSource, jsonOut)
 		},
 	}
 	cmd.Flags().BoolVar(&withSource, "source", false, "Include source code snippet")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
+	cmd.Flags().StringVar(&lang, "lang", "", "Filter by language (e.g. go, python, typescript)")
 	return cmd
 }
 
-func runSymbol(dir, srcRoot, name string, withSource, jsonOut bool) error {
+func runSymbol(dir, srcRoot, name, lang string, withSource, jsonOut bool) error {
 	root := gitRoot(dir)
 	ctx := context.Background()
 	store, err := openStore(dir, srcRoot)
@@ -357,7 +360,12 @@ func runSymbol(dir, srcRoot, name string, withSource, jsonOut bool) error {
 	}
 	defer store.Close()
 
-	nodes, err := store.GetSymbolLocation(ctx, name)
+	// Validate --lang against the known set of language IDs.
+	if lang != "" && !scanner.IsKnownLang(lang) {
+		return fmt.Errorf("find: unknown language %q (supported: go, python, javascript, typescript, lua, zig)", lang)
+	}
+
+	nodes, err := store.GetSymbolLocation(ctx, name, lang)
 	if err != nil {
 		return err
 	}
@@ -450,25 +458,11 @@ func relPath(root, absPath string) string {
 	return rel
 }
 
-// langFromExt maps a file extension to a Markdown fenced-code-block language tag.
-// Only the languages supported by the codemap scanner are listed.
+// langFromExt returns the Markdown fenced-code-block language tag for a file,
+// using scanner.LangIDForExt as the single source of truth.
 func langFromExt(filePath string) string {
-	switch strings.ToLower(filepath.Ext(filePath)) {
-	case ".go":
-		return "go"
-	case ".py":
-		return "python"
-	case ".ts":
-		return "typescript"
-	case ".js":
-		return "javascript"
-	case ".lua":
-		return "lua"
-	case ".zig":
-		return "zig"
-	default:
-		return ""
-	}
+	id, _ := scanner.LangIDForExt(filepath.Ext(filePath))
+	return id
 }
 
 func printJSON(v any) error {

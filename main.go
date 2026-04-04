@@ -13,6 +13,7 @@ import (
 	cmdcodemap "context0/cmd/codemap"
 	cmdexec "context0/cmd/exec"
 	cmdexport "context0/cmd/export"
+	cmdimport "context0/cmd/import"
 	cmdmemory "context0/cmd/memory"
 	"context0/internal/sidecar"
 )
@@ -96,6 +97,7 @@ It provides:
 		cmdexec.NewCmd(&projectDir),
 		cmdask.NewCmd(&projectDir),
 		cmdexport.NewCmd(&projectDir),
+		cmdimport.NewCmd(&projectDir),
 	)
 
 	if err := root.Execute(); err != nil {

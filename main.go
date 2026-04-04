@@ -1,6 +1,7 @@
 package main
 
 import (
+	"embed"
 	"errors"
 	"fmt"
 	"os"
@@ -15,11 +16,23 @@ import (
 	"context0/internal/sidecar"
 )
 
+// embeddedSidecar bundles the Python sidecar source tree and its dependency
+// manifest into the binary.  On first run (or when the binary is updated) the
+// files are extracted to ~/.context0/sidecar-src/ before spawning the sidecar.
+//
+// The all: prefix is required so that files whose names begin with '_'
+// (e.g. sidecar/__init__.py) are included.
+//
+//go:embed all:sidecar pyproject.toml uv.lock
+var embeddedSidecar embed.FS
+
 // Version is set at build time via -ldflags "-X main.Version=<tag>".
 // It defaults to "dev" for local builds.
 var Version = "dev"
 
 func main() {
+	sidecar.SetFS(&embeddedSidecar)
+
 	var startDaemon bool
 	var killDaemon bool
 

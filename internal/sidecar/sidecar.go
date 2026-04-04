@@ -7,9 +7,12 @@
 package sidecar
 
 import (
+	"crypto/sha256"
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"os"
 	"os/exec"
@@ -32,6 +35,20 @@ var (
 	// ErrNotRunning is returned by [Stop] when no live sidecar can be found.
 	ErrNotRunning = errors.New("sidecar is not running")
 )
+
+// ---------------------------------------------------------------------------
+// Embedded filesystem
+// ---------------------------------------------------------------------------
+
+// embeddedFS is registered by main.go via [SetFS] before any [Start] call.
+// When set, the sidecar source tree is extracted from the binary rather than
+// looked up alongside the executable on disk.
+var embeddedFS *embed.FS
+
+// SetFS registers the embedded sidecar filesystem.  Call this from main()
+// before any other sidecar function.  Passing nil disables extraction and
+// falls back to the on-disk sibling-binary lookup (useful in tests).
+func SetFS(f *embed.FS) { embeddedFS = f }
 
 // ---------------------------------------------------------------------------
 // Paths  (overridable via environment variables for testing)
@@ -81,8 +98,9 @@ func IsRunning() bool {
 // ---------------------------------------------------------------------------
 
 // Start spawns the Python sidecar as a detached background process via
-// `uv run sidecar/main.py`.  The sidecar executable is located relative to
-// the running context0 binary (sidecar/main.py lives alongside it).
+// `uv run sidecar/main.py`.  The source tree is extracted from the embedded
+// filesystem (if registered via [SetFS]) to ~/.context0/sidecar-src/, or
+// located alongside the running binary as a fallback.
 //
 // Returns [ErrAlreadyRunning] if the socket is already live.
 func Start() error {
@@ -132,19 +150,31 @@ func Stop() error {
 	return nil
 }
 
-// findSidecarMain locates sidecar/main.py relative to the running binary.
-// Returns (mainPyPath, projectRoot, error).
+// findSidecarMain returns (mainPyPath, projectRoot) by trying two strategies
+// in order:
+//
+//  1. Embedded FS — extract to ~/.context0/sidecar-src/ (skipped if already
+//     up-to-date via content hash), then return paths inside that directory.
+//  2. On-disk sibling — look for sidecar/main.py alongside the running binary
+//     (development / non-embedded builds).
 func findSidecarMain() (string, string, error) {
+	if embeddedFS != nil {
+		projectRoot, err := extractOnce(embeddedFS)
+		if err != nil {
+			return "", "", fmt.Errorf("sidecar: extract embedded sources: %w", err)
+		}
+		return filepath.Join(projectRoot, "sidecar", "main.py"), projectRoot, nil
+	}
+
+	// Fallback: look alongside the running binary.
 	exe, err := os.Executable()
 	if err != nil {
 		return "", "", fmt.Errorf("sidecar: cannot determine executable path: %w", err)
 	}
-	// Resolve symlinks to get the real on-disk location.
 	exe, err = filepath.EvalSymlinks(exe)
 	if err != nil {
 		return "", "", fmt.Errorf("sidecar: eval symlinks: %w", err)
 	}
-
 	projectRoot := filepath.Dir(exe)
 	candidate := filepath.Join(projectRoot, "sidecar", "main.py")
 	if _, statErr := os.Stat(candidate); statErr == nil {
@@ -155,6 +185,91 @@ func findSidecarMain() (string, string, error) {
 			"ensure the sidecar directory is deployed with the binary",
 		exe,
 	)
+}
+
+// ---------------------------------------------------------------------------
+// Embedded source extraction
+// ---------------------------------------------------------------------------
+
+// extractDest is the directory where the embedded sidecar source is unpacked.
+func extractDest() string {
+	return filepath.Join(homeDir(), ".context0", "sidecar-src")
+}
+
+// hashFile is the sentinel written inside extractDest after a successful
+// extraction.  Its content is the hex SHA-256 of all embedded file paths and
+// their contents.  If it matches on a subsequent run, extraction is skipped.
+const hashFile = ".ctx0-hash"
+
+// extractOnce unpacks fsys into extractDest() only when the content hash has
+// changed since the last extraction.  Returns the destination directory path.
+func extractOnce(fsys *embed.FS) (string, error) {
+	dest := extractDest()
+
+	hash, err := fsysHash(fsys)
+	if err != nil {
+		return "", err
+	}
+
+	// Fast path: already up-to-date.
+	if existing, readErr := os.ReadFile(filepath.Join(dest, hashFile)); readErr == nil {
+		if strings.TrimSpace(string(existing)) == hash {
+			return dest, nil
+		}
+	}
+
+	// Slow path: extract every file from the embedded FS.
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		return "", fmt.Errorf("mkdir %s: %w", dest, err)
+	}
+
+	err = fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		target := filepath.Join(dest, filepath.FromSlash(path))
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, readErr := fsys.ReadFile(path)
+		if readErr != nil {
+			return fmt.Errorf("read embedded %s: %w", path, readErr)
+		}
+		if mkErr := os.MkdirAll(filepath.Dir(target), 0o755); mkErr != nil {
+			return mkErr
+		}
+		return os.WriteFile(target, data, 0o644)
+	})
+	if err != nil {
+		return "", fmt.Errorf("extract: %w", err)
+	}
+
+	// Record the hash so subsequent starts skip extraction.
+	_ = os.WriteFile(filepath.Join(dest, hashFile), []byte(hash), 0o644)
+	return dest, nil
+}
+
+// fsysHash computes a stable SHA-256 over all file paths and their contents
+// in fsys (in WalkDir order, which is lexicographic).
+func fsysHash(fsys *embed.FS) (string, error) {
+	h := sha256.New()
+	err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil || d.IsDir() {
+			return walkErr
+		}
+		data, err := fsys.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		// Include the path so renames are detected, not just content changes.
+		fmt.Fprintf(h, "%s\x00", path)
+		h.Write(data)
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("sidecar: hash embedded fs: %w", err)
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
 // ---------------------------------------------------------------------------

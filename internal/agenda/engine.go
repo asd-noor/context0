@@ -30,30 +30,29 @@ func (s TaskStatus) IsValid() bool {
 
 // Agenda represents a named plan with an ordered list of tasks.
 type Agenda struct {
-	ID          int64     `json:"id"`
-	IsActive    bool      `json:"is_active"`
-	Title       string    `json:"title"`
-	Description string    `json:"description"`
-	CreatedAt   time.Time `json:"created_at"`
-	Tasks       []Task    `json:"tasks,omitempty"`
+	ID              int64     `json:"id"`
+	IsActive        bool      `json:"is_active"`
+	Title           string    `json:"title"`
+	Description     string    `json:"description"`
+	AcceptanceGuard string    `json:"acceptance_guard,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	Tasks           []Task    `json:"tasks,omitempty"`
 }
 
 // Task is a single step within an Agenda.
 type Task struct {
-	ID              int64      `json:"id"`
-	AgendaID        int64      `json:"agenda_id"`
-	TaskOrder       int        `json:"task_order"`
-	IsOptional      bool       `json:"is_optional"`
-	Details         string     `json:"details"`
-	AcceptanceGuard string     `json:"acceptance_guard,omitempty"`
-	Status          TaskStatus `json:"status"`
+	ID         int64      `json:"id"`
+	AgendaID   int64      `json:"agenda_id"`
+	TaskOrder  int        `json:"task_order"`
+	IsOptional bool       `json:"is_optional"`
+	Details    string     `json:"details"`
+	Status     TaskStatus `json:"status"`
 }
 
 // TaskInput is the DTO used to create a new task.
 type TaskInput struct {
-	Details         string
-	IsOptional      bool
-	AcceptanceGuard string
+	Details    string
+	IsOptional bool
 }
 
 // Engine wraps the agenda database and exposes CRUD operations.
@@ -77,7 +76,7 @@ func (e *Engine) Close() error {
 
 // CreateAgenda inserts a new agenda with the supplied tasks.
 // Returns the agenda_id.
-func (e *Engine) CreateAgenda(title, description string, tasks []TaskInput) (int64, error) {
+func (e *Engine) CreateAgenda(title, description, acceptanceGuard string, tasks []TaskInput) (int64, error) {
 	tx, err := e.db.Begin()
 	if err != nil {
 		return 0, fmt.Errorf("create_agenda: begin tx: %w", err)
@@ -85,8 +84,8 @@ func (e *Engine) CreateAgenda(title, description string, tasks []TaskInput) (int
 	defer tx.Rollback() //nolint:errcheck
 
 	res, err := tx.Exec(
-		`INSERT INTO agendas (title, description) VALUES (?, ?)`,
-		title, description,
+		`INSERT INTO agendas (title, description, acceptance_guard) VALUES (?, ?, ?)`,
+		title, description, acceptanceGuard,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("create_agenda: insert agenda: %w", err)
@@ -98,9 +97,9 @@ func (e *Engine) CreateAgenda(title, description string, tasks []TaskInput) (int
 
 	for i, t := range tasks {
 		if _, err := tx.Exec(
-			`INSERT INTO tasks (agenda_id, task_order, is_optional, details, acceptance_guard, status)
-			 VALUES (?, ?, ?, ?, ?, ?)`,
-			agendaID, i, boolToInt(t.IsOptional), t.Details, t.AcceptanceGuard, string(StatusPending),
+			`INSERT INTO tasks (agenda_id, task_order, is_optional, details, status)
+			 VALUES (?, ?, ?, ?, ?)`,
+			agendaID, i, boolToInt(t.IsOptional), t.Details, string(StatusPending),
 		); err != nil {
 			return 0, fmt.Errorf("create_agenda: insert task %d: %w", i, err)
 		}
@@ -257,7 +256,7 @@ func (e *Engine) UpdateTask(taskID int64, status TaskStatus) error {
 // UpdateAgenda updates agenda metadata and optionally appends new tasks.
 // Pass empty strings for fields that should not change.
 // Pass nil for newTasks to skip task appending.
-func (e *Engine) UpdateAgenda(id int64, title, description string, isActive *bool, newTasks []TaskInput) error {
+func (e *Engine) UpdateAgenda(id int64, title, description, acceptanceGuard string, isActive *bool, newTasks []TaskInput) error {
 	tx, err := e.db.Begin()
 	if err != nil {
 		return fmt.Errorf("update_agenda: begin tx: %w", err)
@@ -275,6 +274,10 @@ func (e *Engine) UpdateAgenda(id int64, title, description string, isActive *boo
 	if description != "" {
 		setClauses = append(setClauses, "description=?")
 		args = append(args, description)
+	}
+	if acceptanceGuard != "" {
+		setClauses = append(setClauses, "acceptance_guard=?")
+		args = append(args, acceptanceGuard)
 	}
 	if isActive != nil {
 		setClauses = append(setClauses, "is_active=?")
@@ -299,9 +302,9 @@ func (e *Engine) UpdateAgenda(id int64, title, description string, isActive *boo
 		}
 		for i, t := range newTasks {
 			if _, err := tx.Exec(
-				`INSERT INTO tasks (agenda_id, task_order, is_optional, details, acceptance_guard, status)
-				 VALUES (?, ?, ?, ?, ?, ?)`,
-				id, maxOrder+i, boolToInt(t.IsOptional), t.Details, t.AcceptanceGuard, string(StatusPending),
+				`INSERT INTO tasks (agenda_id, task_order, is_optional, details, status)
+				 VALUES (?, ?, ?, ?, ?)`,
+				id, maxOrder+i, boolToInt(t.IsOptional), t.Details, string(StatusPending),
 			); err != nil {
 				return fmt.Errorf("update_agenda: insert new task %d: %w", i, err)
 			}
@@ -332,9 +335,9 @@ func (e *Engine) AddTask(agendaID int64, task TaskInput) (int64, error) {
 	}
 
 	res, err := e.db.Exec(
-		`INSERT INTO tasks (agenda_id, task_order, is_optional, details, acceptance_guard, status)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		agendaID, nextOrder, boolToInt(task.IsOptional), task.Details, task.AcceptanceGuard, string(StatusPending),
+		`INSERT INTO tasks (agenda_id, task_order, is_optional, details, status)
+		 VALUES (?, ?, ?, ?, ?)`,
+		agendaID, nextOrder, boolToInt(task.IsOptional), task.Details, string(StatusPending),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("add_task: insert: %w", err)
@@ -372,8 +375,8 @@ func (e *Engine) getAgendaRow(id int64) (*Agenda, error) {
 	var a Agenda
 	var isActive int
 	err := e.db.QueryRow(
-		`SELECT id, is_active, title, description, created_at FROM agendas WHERE id=?`, id,
-	).Scan(&a.ID, &isActive, &a.Title, &a.Description, &a.CreatedAt)
+		`SELECT id, is_active, title, description, acceptance_guard, created_at FROM agendas WHERE id=?`, id,
+	).Scan(&a.ID, &isActive, &a.Title, &a.Description, &a.AcceptanceGuard, &a.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("get_agenda: not found: %w", err)
 	}
@@ -383,7 +386,7 @@ func (e *Engine) getAgendaRow(id int64) (*Agenda, error) {
 
 func (e *Engine) getTasksForAgenda(agendaID int64) ([]Task, error) {
 	rows, err := e.db.Query(
-		`SELECT id, agenda_id, task_order, is_optional, details, acceptance_guard, status
+		`SELECT id, agenda_id, task_order, is_optional, details, status
 		 FROM tasks WHERE agenda_id=? ORDER BY task_order`,
 		agendaID,
 	)
@@ -398,7 +401,7 @@ func (e *Engine) getTasksForAgenda(agendaID int64) ([]Task, error) {
 		var isOptional int
 		var statusStr string
 		if err := rows.Scan(
-			&t.ID, &t.AgendaID, &t.TaskOrder, &isOptional, &t.Details, &t.AcceptanceGuard, &statusStr,
+			&t.ID, &t.AgendaID, &t.TaskOrder, &isOptional, &t.Details, &statusStr,
 		); err != nil {
 			return nil, err
 		}

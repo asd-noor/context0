@@ -246,15 +246,13 @@ Both search legs over-fetch by 5x before fusion to reduce rank cutoff bias. The 
 ### Schema (`agenda-ctx0.sqlite`)
 
 ```sql
-agendas     (id INTEGER PK, is_active BOOL, title TEXT, description TEXT, created_at DATETIME)
+agendas     (id INTEGER PK, is_active BOOL, title TEXT, description TEXT, acceptance_guard TEXT, created_at DATETIME)
 tasks       (id INTEGER PK, agenda_id FK, task_order INT, is_optional BOOL,
-             details TEXT, acceptance_guard TEXT, is_completed INT, status TEXT)
+             details TEXT, is_completed INT, status TEXT)
 agendas_fts USING fts5(title, description, content='agendas')
 ```
 
 `status` is the canonical task state: `pending` | `in_progress` | `completed`. The legacy `is_completed` integer column is kept for backwards compatibility and is kept in sync with `status` on every write (`completed` → 1, everything else → 0).
-
-**Schema migration**: On open, `Open()` runs `migrateSchema()` which detects absence of the `status` column via `PRAGMA table_info(tasks)` and adds it, backfilling `completed` from rows where `is_completed=1`. This is safe to run on both new and existing databases.
 
 Tasks cascade on agenda delete. FTS5 is trigger-maintained.
 
@@ -263,7 +261,7 @@ Tasks cascade on agenda delete. FTS5 is trigger-maintained.
 - **Auto-deactivation**: when a task status is updated, the engine checks if all non-optional tasks for the agenda have `status = 'completed'`. If so, `is_active` is set to false. Tasks with status `in_progress` or `pending` keep the agenda active.
 - **Active guard on delete**: active agendas cannot be deleted.
 - **Scoped task numbering**: tasks are displayed and addressed by 1-based order within their agenda (e.g. `task done 5 2` = agenda 5, task #2), not by global database ID.
-- **Acceptance guards**: each task can have a "Done when:" condition. Agents should verify this condition before marking the task complete.
+- **Acceptance guards**: each agenda can have a "Completion Condition:" condition. Agents should verify this condition before marking the agenda as inactive.
 - **Task lifecycle**: `pending` → `in_progress` → `completed` (and back via `reopen`). Any transition between states is permitted.
 - **Task addition**: `AddTask()` appends a new task to an existing plan at any time, regardless of the plan's active state.
 - **No embeddings**: search is FTS5-only. Agenda queries are keyword-oriented, making vector search unnecessary.
@@ -461,7 +459,7 @@ Archives store only base file names (no directory prefix) so they are portable a
 
 **Scoped task numbering.** Task IDs shown to users are 1-based order within their agenda, not global database auto-increments. This prevents confusing gaps when agendas are deleted.
 
-**Acceptance guards.** Each task can carry a "Done when:" condition. The skill instructions direct agents to verify the guard before marking a task complete, preventing premature completion.
+**Acceptance guards.** Each agenda can carry a "Completion Condition:" condition. The skill instructions direct agents to verify the guard before marking the agenda as inactive, preventing premature completion.
 
 **Ralph-loop self-correction.** `exec` and `discover` feed failed script output back to the inference model for repair. This makes ad-hoc Python scripting practical without requiring the agent to manually debug execution errors.
 

@@ -34,8 +34,9 @@ context0 memory query "authentication"
 
 # Create a task plan with acceptance criteria
 context0 agenda plan create --title "Add auth" \
-  --task "Implement JWT validation" --task-guard "go test passes" \
-  --task "Add middleware to router" --task-guard "401 on missing token"
+  --guard "all tests pass and routes return 401 without token" \
+  --task "Implement JWT validation" \
+  --task "Add middleware to router"
 
 # Ask a natural-language question across all engines
 context0 ask "What caching strategy does this project use?"

@@ -139,9 +139,12 @@ func newPlanGetCmd(projectDir *string) *cobra.Command {
 				active = "inactive"
 			}
 			fmt.Printf("Plan #%d [%s]\n", a.ID, active)
-			fmt.Printf("  Title      : %s\n", a.Title)
+			fmt.Printf("  Title: %s\n", a.Title)
 			fmt.Printf("  Description: %s\n", a.Description)
-			fmt.Printf("  Created    : %s\n", a.CreatedAt.Format("2006-01-02 15:04:05"))
+			if a.AcceptanceGuard != "" {
+				fmt.Printf("  Completion Condition: %s\n", a.AcceptanceGuard)
+			}
+			fmt.Printf("  Created: %s\n", a.CreatedAt.Format("2006-01-02 15:04:05"))
 			fmt.Printf("  Tasks (%d):\n", len(a.Tasks))
 			for _, t := range a.Tasks {
 				symbol := taskStatusSymbol(t.Status)
@@ -150,9 +153,6 @@ func newPlanGetCmd(projectDir *string) *cobra.Command {
 					opt = " (optional)"
 				}
 				fmt.Printf("    %s #%d%s: %s\n", symbol, t.TaskOrder+1, opt, t.Details)
-				if t.AcceptanceGuard != "" {
-					fmt.Printf("         Done when: %s\n", t.AcceptanceGuard)
-				}
 			}
 			return nil
 		},
@@ -162,10 +162,9 @@ func newPlanGetCmd(projectDir *string) *cobra.Command {
 // --- plan create ---
 
 func newPlanCreateCmd(projectDir *string) *cobra.Command {
-	var title, description string
+	var title, description, guard string
 	var taskDetails []string
 	var taskOptional []bool
-	var taskGuards []string
 
 	cmd := &cobra.Command{
 		Use:   "create",
@@ -183,14 +182,10 @@ func newPlanCreateCmd(projectDir *string) *cobra.Command {
 				if i < len(taskOptional) {
 					optional = taskOptional[i]
 				}
-				guard := ""
-				if i < len(taskGuards) {
-					guard = taskGuards[i]
-				}
-				tasks[i] = agenda.TaskInput{Details: d, IsOptional: optional, AcceptanceGuard: guard}
+				tasks[i] = agenda.TaskInput{Details: d, IsOptional: optional}
 			}
 
-			id, err := eng.CreateAgenda(title, description, tasks)
+			id, err := eng.CreateAgenda(title, description, guard, tasks)
 			if err != nil {
 				return err
 			}
@@ -201,9 +196,9 @@ func newPlanCreateCmd(projectDir *string) *cobra.Command {
 
 	cmd.Flags().StringVarP(&title, "title", "t", "", "Plan title")
 	cmd.Flags().StringVarP(&description, "description", "d", "", "Plan description")
+	cmd.Flags().StringVar(&guard, "guard", "", "Acceptance criteria (done-when condition)")
 	cmd.Flags().StringArrayVarP(&taskDetails, "task", "T", nil, "Task details (repeat for multiple tasks)")
 	cmd.Flags().BoolSliceVar(&taskOptional, "task-optional", nil, "Mark corresponding task as optional (repeat to match --task order)")
-	cmd.Flags().StringArrayVar(&taskGuards, "task-guard", nil, "Acceptance criteria for corresponding task (repeat to match --task order)")
 	return cmd
 }
 
@@ -257,7 +252,7 @@ func newPlanSearchCmd(projectDir *string) *cobra.Command {
 // --- plan update ---
 
 func newPlanUpdateCmd(projectDir *string) *cobra.Command {
-	var title, description, newTasksJSON string
+	var title, description, guard, newTasksJSON string
 	var deactivate bool
 
 	cmd := &cobra.Command{
@@ -289,7 +284,7 @@ func newPlanUpdateCmd(projectDir *string) *cobra.Command {
 				}
 			}
 
-			if err := eng.UpdateAgenda(id, title, description, isActive, newTasks); err != nil {
+			if err := eng.UpdateAgenda(id, title, description, guard, isActive, newTasks); err != nil {
 				return err
 			}
 			fmt.Printf("updated plan id=%d\n", id)
@@ -299,6 +294,7 @@ func newPlanUpdateCmd(projectDir *string) *cobra.Command {
 
 	cmd.Flags().StringVarP(&title, "title", "t", "", "New title")
 	cmd.Flags().StringVarP(&description, "description", "d", "", "New description")
+	cmd.Flags().StringVar(&guard, "guard", "", "New acceptance criteria (done-when condition)")
 	cmd.Flags().BoolVar(&deactivate, "deactivate", false, "Mark plan as inactive")
 	cmd.Flags().StringVar(&newTasksJSON, "tasks", "", `JSON array of tasks to append, e.g. '[{"Details":"...","IsOptional":false}]'`)
 	return cmd
@@ -355,7 +351,6 @@ func newTaskCmd(projectDir *string) *cobra.Command {
 func newTaskAddCmd(projectDir *string) *cobra.Command {
 	var details string
 	var optional bool
-	var guard string
 
 	cmd := &cobra.Command{
 		Use:   "add <plan-id>",
@@ -377,9 +372,8 @@ func newTaskAddCmd(projectDir *string) *cobra.Command {
 			defer eng.Close()
 
 			taskID, err := eng.AddTask(planID, agenda.TaskInput{
-				Details:         details,
-				IsOptional:      optional,
-				AcceptanceGuard: guard,
+				Details:    details,
+				IsOptional: optional,
 			})
 			if err != nil {
 				return err
@@ -391,7 +385,6 @@ func newTaskAddCmd(projectDir *string) *cobra.Command {
 
 	cmd.Flags().StringVarP(&details, "details", "T", "", "Task details (required)")
 	cmd.Flags().BoolVar(&optional, "optional", false, "Mark task as optional")
-	cmd.Flags().StringVar(&guard, "guard", "", "Acceptance criteria (done-when condition)")
 	return cmd
 }
 

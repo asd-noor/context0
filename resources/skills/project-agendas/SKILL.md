@@ -69,7 +69,7 @@ context0 agenda get 7
 
 ### Marking tasks complete
 
-**Before marking a task done, check its acceptance guard** (the "Done when:" line shown by `agenda get`). Only mark the task complete when the guard condition is satisfied. If a task has no guard, use your judgement that the work is complete.
+**Before marking a task done, check its acceptance guard** (the "Completion Condition:" line shown by `agenda get`). Only mark the task complete when the guard condition is satisfied. If a task has no guard, use your judgement that the work is complete.
 
 Tasks are identified by **agenda ID** and **task number** (1-based, as shown by `agenda get`):
 

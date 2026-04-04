@@ -114,11 +114,11 @@ Structured task and plan management with acceptance criteria and automatic compl
 #### Create a plan
 
 ```
-context0 agenda plan create --title <t> --description <d> [--task <T>]... [--task-guard <g>]... [--task-optional <bool>]...
+context0 agenda plan create --title <t> --description <d> [--guard <g>] [--task <T>]... [--task-optional <bool>]...
 ```
 
 - `--task` (`-T`): task description (repeat for multiple tasks)
-- `--task-guard`: acceptance criteria for the corresponding task (positional pairing with `--task`)
+- `--guard`: acceptance criteria for the plan as a whole ("Completion Condition:" condition)
 - `--task-optional`: mark the corresponding task as optional (does not block auto-deactivation)
 
 Example:
@@ -126,12 +126,10 @@ Example:
 context0 agenda plan create \
   --title "Add authentication" \
   --description "JWT middleware for all protected routes" \
+  --guard "All protected routes return 401 without token and docs are updated" \
   --task "Create JWT validation in internal/auth" \
-  --task-guard "go vet and go test pass" \
   --task "Add middleware to router" \
-  --task-guard "Protected routes return 401 without token" \
-  --task "Update API docs" \
-  --task-guard "README documents auth header format"
+  --task "Update API docs"
 ```
 
 #### List plans
@@ -158,16 +156,14 @@ Task status symbols:
 Output:
 ```
 Agenda #5 [active]
-  Title      : Add authentication
+  Title: Add authentication
   Description: JWT middleware for all protected routes
-  Created    : 2026-03-21 14:30:00
+  Completion Condition: All protected routes return 401 without token and docs are updated
+  Created: 2026-03-21 14:30:00
   Tasks (3):
     [ ] #1: Create JWT validation in internal/auth
-         Done when: go vet and go test pass
     [→] #2: Add middleware to router
-         Done when: Protected routes return 401 without token
     [x] #3: Update API docs
-         Done when: README documents auth header format
 ```
 
 #### Search plans
@@ -181,10 +177,11 @@ FTS5 keyword search on plan titles and descriptions.
 #### Update a plan
 
 ```
-context0 agenda plan update <id> [--title <t>] [--description <d>] [--deactivate] [--tasks <json>]
+context0 agenda plan update <id> [--title <t>] [--description <d>] [--guard <g>] [--deactivate] [--tasks <json>]
 ```
 
-- `--tasks`: JSON array of tasks to append, e.g. `'[{"Details":"New task","AcceptanceGuard":"condition","IsOptional":false}]'`
+- `--tasks`: JSON array of tasks to append, e.g. `'[{"Details":"New task","IsOptional":false}]'`
+- `--guard`: update the plan-level acceptance criteria
 - `--deactivate`: manually mark the plan as inactive
 
 #### Delete a plan
@@ -200,18 +197,17 @@ Only inactive (completed or deactivated) plans can be deleted. Active plans are 
 #### Add a task to an existing plan
 
 ```
-context0 agenda task add <plan-id> --details <T> [--guard <g>] [--optional]
+context0 agenda task add <plan-id> --details <T> [--optional]
 ```
 
 Appends a new task to an existing plan regardless of the plan's current active state.
 
 - `--details` (`-T`): task description (required)
-- `--guard`: acceptance criteria (done-when condition)
 - `--optional`: mark task as optional (does not block auto-deactivation)
 
 Example:
 ```
-context0 agenda task add 5 --details "Write migration script" --guard "migration runs without errors"
+context0 agenda task add 5 --details "Write migration script"
 ```
 
 Output: `added task id=4 to plan 5`
@@ -239,7 +235,7 @@ context0 agenda task done <plan-id> <task-number>
 
 Tasks are identified by **plan ID** and **1-based task number** as displayed by `agenda plan get`.
 
-Before marking a task done, verify its acceptance criteria ("Done when:" condition) is satisfied.
+Before marking the agenda as inactive, verify the plan's acceptance criteria ("Completion Condition:" condition) is satisfied.
 
 Example:
 ```

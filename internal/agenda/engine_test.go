@@ -60,7 +60,7 @@ func TestTaskStatusConstants(t *testing.T) {
 func TestNewTasksArePending(t *testing.T) {
 	eng := openTestEngine(t)
 
-	id, err := eng.CreateAgenda("test", "desc", []agenda.TaskInput{
+	id, err := eng.CreateAgenda("test", "desc", "", []agenda.TaskInput{
 		{Details: "task one"},
 		{Details: "task two"},
 	})
@@ -84,7 +84,7 @@ func TestNewTasksArePending(t *testing.T) {
 func TestStatusTransitions(t *testing.T) {
 	eng := openTestEngine(t)
 
-	id, err := eng.CreateAgenda("transitions", "desc", []agenda.TaskInput{
+	id, err := eng.CreateAgenda("transitions", "desc", "", []agenda.TaskInput{
 		{Details: "alpha"},
 	})
 	if err != nil {
@@ -118,7 +118,7 @@ func TestStatusTransitions(t *testing.T) {
 func TestInvalidStatusRejected(t *testing.T) {
 	eng := openTestEngine(t)
 
-	id, err := eng.CreateAgenda("invalid", "desc", []agenda.TaskInput{
+	id, err := eng.CreateAgenda("invalid", "desc", "", []agenda.TaskInput{
 		{Details: "task"},
 	})
 	if err != nil {
@@ -141,7 +141,7 @@ func TestInvalidStatusRejected(t *testing.T) {
 func TestAutoDeactivationOnAllCompleted(t *testing.T) {
 	eng := openTestEngine(t)
 
-	id, err := eng.CreateAgenda("auto-deactivate", "desc", []agenda.TaskInput{
+	id, err := eng.CreateAgenda("auto-deactivate", "desc", "", []agenda.TaskInput{
 		{Details: "required 1"},
 		{Details: "required 2"},
 	})
@@ -180,7 +180,7 @@ func TestAutoDeactivationOnAllCompleted(t *testing.T) {
 func TestAutoDeactivationIgnoresOptionalTasks(t *testing.T) {
 	eng := openTestEngine(t)
 
-	id, err := eng.CreateAgenda("optional-skip", "desc", []agenda.TaskInput{
+	id, err := eng.CreateAgenda("optional-skip", "desc", "", []agenda.TaskInput{
 		{Details: "required"},
 		{Details: "optional", IsOptional: true},
 	})
@@ -205,7 +205,7 @@ func TestAutoDeactivationIgnoresOptionalTasks(t *testing.T) {
 func TestInProgressDoesNotTriggerDeactivation(t *testing.T) {
 	eng := openTestEngine(t)
 
-	id, err := eng.CreateAgenda("in-progress-guard", "desc", []agenda.TaskInput{
+	id, err := eng.CreateAgenda("in-progress-guard", "desc", "", []agenda.TaskInput{
 		{Details: "task A"},
 		{Details: "task B"},
 	})
@@ -240,7 +240,7 @@ func TestSchemaMigration_AddStatusColumn(t *testing.T) {
 	// We then verify the status column exists and works correctly.
 	eng := openTestEngineAt(t, dir)
 
-	id, err := eng.CreateAgenda("migration-test", "desc", []agenda.TaskInput{
+	id, err := eng.CreateAgenda("migration-test", "desc", "", []agenda.TaskInput{
 		{Details: "legacy task"},
 	})
 	if err != nil {
@@ -270,7 +270,7 @@ func TestSchemaMigration_AddStatusColumn(t *testing.T) {
 func TestAddTask(t *testing.T) {
 	eng := openTestEngine(t)
 
-	id, err := eng.CreateAgenda("addtask-test", "desc", []agenda.TaskInput{
+	id, err := eng.CreateAgenda("addtask-test", "desc", "", []agenda.TaskInput{
 		{Details: "initial"},
 	})
 	if err != nil {
@@ -278,9 +278,8 @@ func TestAddTask(t *testing.T) {
 	}
 
 	taskID, err := eng.AddTask(id, agenda.TaskInput{
-		Details:         "appended",
-		IsOptional:      true,
-		AcceptanceGuard: "all green",
+		Details:    "appended",
+		IsOptional: true,
 	})
 	if err != nil {
 		t.Fatalf("AddTask: %v", err)
@@ -303,9 +302,6 @@ func TestAddTask(t *testing.T) {
 	if !added.IsOptional {
 		t.Error("IsOptional: want true, got false")
 	}
-	if added.AcceptanceGuard != "all green" {
-		t.Errorf("AcceptanceGuard: want %q, got %q", "all green", added.AcceptanceGuard)
-	}
 	if added.Status != agenda.StatusPending {
 		t.Errorf("Status: want %q, got %q", agenda.StatusPending, added.Status)
 	}
@@ -325,14 +321,14 @@ func TestAddTaskNotFound(t *testing.T) {
 func TestUpdateAgendaNewTasksPending(t *testing.T) {
 	eng := openTestEngine(t)
 
-	id, err := eng.CreateAgenda("append-test", "desc", []agenda.TaskInput{
+	id, err := eng.CreateAgenda("append-test", "desc", "", []agenda.TaskInput{
 		{Details: "original"},
 	})
 	if err != nil {
 		t.Fatalf("CreateAgenda: %v", err)
 	}
 
-	if err := eng.UpdateAgenda(id, "", "", nil, []agenda.TaskInput{
+	if err := eng.UpdateAgenda(id, "", "", "", nil, []agenda.TaskInput{
 		{Details: "appended"},
 	}); err != nil {
 		t.Fatalf("UpdateAgenda: %v", err)

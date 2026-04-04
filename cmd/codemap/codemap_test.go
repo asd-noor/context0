@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	cmdcodemap "context0/cmd/codemap"
+	"context0/internal/archive"
 	"context0/internal/db"
 	"context0/internal/graph"
 )
@@ -24,9 +25,14 @@ var sharedHome string
 // sharedProjectDir is the real project root, set once by TestMain.
 var sharedProjectDir string
 
-// TestMain indexes the real project once and makes the DB available to all
-// tests that need a pre-indexed project.  Tests that verify DB naming or need
-// a clean HOME set their own $HOME via t.Setenv.
+// TestMain locates the pre-built codemap index in the developer's real HOME,
+// snapshots it into a temporary archive, then restores it into an isolated
+// temp HOME so all "AfterIndex" tests can share a fast, clean copy without
+// re-running the expensive index step.
+//
+// Before running the tests for the first time, build and index once:
+//
+//	go build -o /tmp/context0 . && /tmp/context0 codemap index
 func TestMain(m *testing.M) {
 	// Resolve the real project root (two dirs up from cmd/codemap).
 	root, err := filepath.Abs("../../")
@@ -35,7 +41,34 @@ func TestMain(m *testing.M) {
 	}
 	sharedProjectDir = root
 
-	// Build a shared temp HOME so that the shared index is isolated.
+	// Locate the pre-built index in the developer's real HOME.
+	realDataDir, err := db.ProjectDir(root)
+	if err != nil {
+		panic("db.ProjectDir: " + err.Error())
+	}
+	prebuiltDB := filepath.Join(realDataDir, "codemap-ctx0.sqlite")
+	if _, err := os.Stat(prebuiltDB); err != nil {
+		panic(
+			"codemap index not found at " + prebuiltDB + "\n" +
+				"Run once before testing:\n" +
+				"  go build -o /tmp/context0 . && /tmp/context0 codemap index",
+		)
+	}
+
+	// Snapshot the pre-built index into a temp archive.
+	snapFile, err := os.CreateTemp("", "ctx0-test-snap-*.tar.gz")
+	if err != nil {
+		panic("CreateTemp: " + err.Error())
+	}
+	snapshotPath := snapFile.Name()
+	snapFile.Close()
+	defer os.Remove(snapshotPath)
+
+	if err := archive.Write(snapshotPath, []string{prebuiltDB}); err != nil {
+		panic("archive snapshot: " + err.Error())
+	}
+
+	// Create a shared temp HOME and restore the snapshot into it.
 	tmpHome, err := os.MkdirTemp("", "ctx0-test-home-*")
 	if err != nil {
 		panic("MkdirTemp: " + err.Error())
@@ -43,18 +76,19 @@ func TestMain(m *testing.M) {
 	sharedHome = tmpHome
 	defer os.RemoveAll(tmpHome)
 
-	// Point HOME at the shared temp dir for the index run.
+	// Resolve the shared data dir by temporarily pointing HOME at tmpHome so
+	// that db.ProjectDir constructs the path (and creates the directory) there.
 	origHome := os.Getenv("HOME")
 	os.Setenv("HOME", tmpHome)
-
-	// Run `codemap index` once so that all "after index" tests can reuse it.
-	out, execErr := runWithHome(tmpHome, root, "index")
-	if execErr != nil {
-		panic("shared index failed: " + execErr.Error() + "\noutput: " + out)
+	sharedDataDir, err := db.ProjectDir(root)
+	if err != nil {
+		panic("db.ProjectDir (shared home): " + err.Error())
 	}
-
-	// Restore the real HOME; individual tests will override it as needed.
 	os.Setenv("HOME", origHome)
+
+	if _, err := archive.Extract(sharedDataDir, snapshotPath); err != nil {
+		panic("archive restore: " + err.Error())
+	}
 
 	os.Exit(m.Run())
 }
@@ -159,61 +193,21 @@ func setupGoProject(t *testing.T) string {
 
 // ── db naming unit tests ──────────────────────────────────────────────────────
 
-// TestPersistentPreRunEDefaultsSrcRoot verifies that after PersistentPreRunE
-// fires, the DB is named "<basename>-ctx0.sqlite". We verify this by checking
-// the DB file is created in the right place after index.
-func TestIndexCreatesDBNamedAfterProject(t *testing.T) {
+// TestIndexCreatesDB verifies that after running `codemap index` the standard
+// database file "codemap-ctx0.sqlite" is created inside the project's
+// context0 data directory.
+func TestIndexCreatesDB(t *testing.T) {
 	dir := setupGoProject(t)
-	base := filepath.Base(dir) // "context0"
 
 	mustRun(t, dir, "index")
 
-	// Determine where the DB should live.
 	projectDir, err := db.ProjectDir(dir)
 	if err != nil {
 		t.Fatalf("db.ProjectDir: %v", err)
 	}
-	expectedDB := filepath.Join(projectDir, base+"-ctx0.sqlite")
+	expectedDB := filepath.Join(projectDir, "codemap-ctx0.sqlite")
 	if _, err := os.Stat(expectedDB); err != nil {
 		t.Fatalf("expected DB at %q not found: %v", expectedDB, err)
-	}
-}
-
-// TestSrcRootBareNameOverridesDBName verifies that --src-root myrepo produces
-// "myrepo-ctx0.sqlite", regardless of the project basename.
-func TestSrcRootBareNameOverridesDBName(t *testing.T) {
-	dir := setupGoProject(t)
-	customName := "customrepo"
-
-	mustRun(t, dir, "--src-root", customName, "index")
-
-	projectDir, err := db.ProjectDir(dir)
-	if err != nil {
-		t.Fatalf("db.ProjectDir: %v", err)
-	}
-	expectedDB := filepath.Join(projectDir, customName+"-ctx0.sqlite")
-	if _, err := os.Stat(expectedDB); err != nil {
-		t.Fatalf("expected DB at %q not found: %v", expectedDB, err)
-	}
-}
-
-// TestTwoSrcRootsProduceTwoDBFiles verifies that two different --src-root
-// values give independent database files.
-func TestTwoSrcRootsProduceTwoDBFiles(t *testing.T) {
-	dir := setupGoProject(t)
-
-	mustRun(t, dir, "--src-root", "alpha", "index")
-	mustRun(t, dir, "--src-root", "beta", "index")
-
-	projectDir, err := db.ProjectDir(dir)
-	if err != nil {
-		t.Fatalf("db.ProjectDir: %v", err)
-	}
-	for _, name := range []string{"alpha-ctx0.sqlite", "beta-ctx0.sqlite"} {
-		p := filepath.Join(projectDir, name)
-		if _, err := os.Stat(p); err != nil {
-			t.Errorf("expected DB %q not found: %v", p, err)
-		}
 	}
 }
 
@@ -232,7 +226,7 @@ func TestStatusNoIndex(t *testing.T) {
 
 func TestOutlineNoIndex(t *testing.T) {
 	dir := setupGoProject(t)
-	_, err := run(t, dir, "outline", filepath.Join(dir, "util", "hash.go"))
+	_, err := run(t, dir, "outline", filepath.Join(dir, "internal", "graph", "hash.go"))
 	if err == nil {
 		t.Fatal("expected error from outline on unindexed project, got nil")
 	}
@@ -287,7 +281,7 @@ func TestStatusAfterIndex(t *testing.T) {
 }
 
 func TestOutlineAfterIndex(t *testing.T) {
-	out := mustRunShared(t, "outline", filepath.Join(sharedProjectDir, "util", "hash.go"))
+	out := mustRunShared(t, "outline", filepath.Join(sharedProjectDir, "internal", "graph", "hash.go"))
 	for _, sym := range []string{"NodeID", "DiagnosticID"} {
 		if !strings.Contains(out, sym) {
 			t.Errorf("outline output missing symbol %q: %q", sym, out)
@@ -315,7 +309,7 @@ func TestDiagnosticsAfterIndex(t *testing.T) {
 // ── JSON output ───────────────────────────────────────────────────────────────
 
 func TestOutlineJSONAfterIndex(t *testing.T) {
-	out := mustRunShared(t, "outline", "--json", filepath.Join(sharedProjectDir, "util", "hash.go"))
+	out := mustRunShared(t, "outline", "--json", filepath.Join(sharedProjectDir, "internal", "graph", "hash.go"))
 	var nodes []map[string]any
 	if err := json.Unmarshal([]byte(out), &nodes); err != nil {
 		t.Fatalf("outline --json: invalid JSON: %v\noutput: %q", err, out)

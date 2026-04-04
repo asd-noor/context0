@@ -40,7 +40,7 @@ func newScanner(root string) *scanner.Scanner {
 
 func TestScanFileGoFunctions(t *testing.T) {
 	root := projectRoot(t)
-	path := filepath.Join(root, "util", "hash.go")
+	path := filepath.Join(root, "internal", "graph", "hash.go")
 	s := newScanner(root)
 	nodes, err := s.ScanFile(context.Background(), path)
 	if err != nil {
@@ -234,7 +234,7 @@ func TestScanFileUnsupportedExtension(t *testing.T) {
 
 func TestScanFileNodeFields(t *testing.T) {
 	root := projectRoot(t)
-	path := filepath.Join(root, "util", "hash.go")
+	path := filepath.Join(root, "internal", "graph", "hash.go")
 	s := newScanner(root)
 	nodes, err := s.ScanFile(context.Background(), path)
 	if err != nil {

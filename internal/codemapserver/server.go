@@ -282,6 +282,11 @@ func (srv *Server) doIndex(ctx context.Context) error {
 		return fmt.Errorf("clear store: %w", err)
 	}
 
+	// Detect which languages are present and prewarm their LSP servers
+	// concurrently while the Tree-sitter scan runs below.
+	langIDs := srv.sc.DetectLanguages(srv.rootDir)
+	go srv.lspSvc.Prewarm(ctx, langIDs)
+
 	nodes, err := srv.sc.Scan(ctx, srv.rootDir)
 	if err != nil {
 		return fmt.Errorf("scan: %w", err)

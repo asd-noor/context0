@@ -325,6 +325,28 @@ func NewService(rootDir string, pm *pkgmgr.Manager) *Service {
 	}
 }
 
+// Prewarm starts the LSP client for each given language ID concurrently and
+// waits until all warmup periods have elapsed. Intended to be called in the
+// background (via go) before a scan so that clients are warm by the time
+// Enrich runs. It is a no-op for any language whose server binary cannot be
+// resolved.
+func (s *Service) Prewarm(ctx context.Context, langIDs []string) {
+	var wg sync.WaitGroup
+	for _, id := range langIDs {
+		id := id
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c, err := s.getClient(ctx, id)
+			if err != nil {
+				return
+			}
+			c.warmupWait()
+		}()
+	}
+	wg.Wait()
+}
+
 // Close shuts down all active LSP clients.
 func (s *Service) Close() {
 	s.mu.Lock()
@@ -396,43 +418,53 @@ func (s *Service) Enrich(ctx context.Context, nodes []graph.Node, store *graph.S
 		allEdges []graph.Edge
 	)
 
+	// Enrich all languages concurrently. Each language gets its own worker pool.
+	var wg sync.WaitGroup
 	for langID, langNodes := range byLang {
-		client, err := s.getClient(ctx, langID)
-		if err != nil {
-			// Language server unavailable — skip this language.
-			continue
-		}
+		langID := langID
+		langNodes := langNodes
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 
-		// Adaptive warmup: wait until the server has had time to index.
-		client.warmupWait()
+			client, err := s.getClient(ctx, langID)
+			if err != nil {
+				// Language server unavailable — skip this language.
+				return
+			}
 
-		// Fan out enrichment across the worker pool.
-		work := make(chan graph.Node, len(langNodes))
-		for _, n := range langNodes {
-			work <- n
-		}
-		close(work)
+			// Adaptive warmup: wait until the server has had time to index.
+			client.warmupWait()
 
-		var wg sync.WaitGroup
-		for i := 0; i < workerCount; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for n := range work {
-					if ctx.Err() != nil {
-						return
+			// Fan out enrichment across the worker pool.
+			work := make(chan graph.Node, len(langNodes))
+			for _, n := range langNodes {
+				work <- n
+			}
+			close(work)
+
+			var innerWg sync.WaitGroup
+			for i := 0; i < workerCount; i++ {
+				innerWg.Add(1)
+				go func() {
+					defer innerWg.Done()
+					for n := range work {
+						if ctx.Err() != nil {
+							return
+						}
+						edges := s.enrichNode(ctx, client, langID, n, store)
+						if len(edges) > 0 {
+							edgeMu.Lock()
+							allEdges = append(allEdges, edges...)
+							edgeMu.Unlock()
+						}
 					}
-					edges := s.enrichNode(ctx, client, langID, n, store)
-					if len(edges) > 0 {
-						edgeMu.Lock()
-						allEdges = append(allEdges, edges...)
-						edgeMu.Unlock()
-					}
-				}
-			}()
-		}
-		wg.Wait()
+				}()
+			}
+			innerWg.Wait()
+		}()
 	}
+	wg.Wait()
 
 	return allEdges, ctx.Err()
 }

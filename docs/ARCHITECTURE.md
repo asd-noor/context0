@@ -65,6 +65,7 @@ context0/
 │   │   └── engine.go           # CRUD + FTS5 search + task lifecycle + AddTask
 │   ├── graph/                  # Semantic code graph
 │   │   ├── types.go            # Node, Edge, Relation constants
+│   │   ├── hash.go             # SHA256 node/diagnostic ID generation
 │   │   └── store.go            # SQLite graph store + ErrNotIndexed + OpenReadOnly
 │   ├── scanner/                # Tree-sitter AST scanner
 │   │   ├── queries.go          # S-expression queries per language
@@ -72,10 +73,12 @@ context0/
 │   ├── lsp/                    # LSP client
 │   │   ├── types.go            # JSON-RPC + LSP message types
 │   │   ├── transport.go        # Content-Length framing (read/write)
-│   │   └── lsp.go              # Client subprocess pool + Enrich()
+│   │   ├── uri.go              # file:// URI <-> OS path conversion
+│   │   └── lsp.go              # Client per language; concurrent Enrich() + Prewarm()
 │   ├── watcher/watcher.go      # fsnotify -> incremental re-index + idle auto-stop
 │   ├── codemapserver/          # Code exploration engine wiring
 │   │   ├── server.go           # Index lifecycle; New() and NewWatch() constructors
+│   │   ├── git.go              # Git root detection
 │   │   └── query.go            # Shared CLI helpers (NodeWithSource, etc.)
 │   └── pkgmgr/                 # LSP binary resolver
 │       ├── manager.go          # ResolveBinary: PATH -> cache -> download
@@ -92,17 +95,11 @@ context0/
 │   ├── downloader.py           # Hugging Face Hub model cache manager
 │   ├── prompts.py              # Prompt templates (ask, exec repair + triage, discover)
 │   └── protocol.py             # Command name constants
-└── util/
-    ├── hash.go                 # SHA256 node ID generation
-    ├── uri.go                  # file:// URI <-> OS path conversion
-    └── git.go                  # Git root detection
 ```
 
 ---
 
 ## Python Sidecar
-
-### Role
 
 The sidecar is an always-on background process that provides two services the Go binary cannot do natively: **local ML inference** and **orchestrated multi-step reasoning**.
 
@@ -328,10 +325,14 @@ The codemap DB filename is derived from `--src-root` via `db.CodeMapDBName(srcRo
 ```
 Full index (runIndex -> doIndex):
   1. store.Clear()
-  2. scanner.Scan(ctx, root)        -> []Node
-  3. store.BulkUpsertNodes(nodes)
-  4. lsp.Enrich(ctx, nodes, store)  -> []Edge
-  5. store.BulkUpsertEdges(edges)
+  2. sc.DetectLanguages(root) -> []langID
+     go lsp.Prewarm(ctx, langIDs)     -- starts all LSP clients concurrently in background
+  3. scanner.Scan(ctx, root)          -- concurrent worker pool (runtime.NumCPU workers)
+       -> []Node
+  4. store.BulkUpsertNodes(nodes)
+  5. lsp.Enrich(ctx, nodes, store)    -- all languages enriched concurrently
+       -> []Edge
+  6. store.BulkUpsertEdges(edges)
 
 Status transitions: Idle -> InProgress -> Ready | Failed
 ```
@@ -340,25 +341,31 @@ Status transitions: Idle -> InProgress -> Ready | Failed
 
 The scanner walks the project directory, parses each supported file with Tree-sitter, and runs language-specific S-expression queries to extract symbol nodes.
 
+Scanning is two-phase: a sequential `filepath.WalkDir` collects candidate file paths (walk itself cannot be parallelised because `SkipDir` must be returned synchronously), then a worker pool of `runtime.NumCPU()` goroutines parses all files concurrently. Each `ScanFile` call creates its own `sitter.Parser` instance, so workers share no mutable state.
+
 Supported languages: Go, Python, JavaScript, TypeScript, Lua, Zig.
 
 Skipped: `vendor/`, `node_modules/`, `__pycache__/`, `.git/`, `.venv/`, `zig-cache/`, `zig-out/`, generated files. Respects `.gitignore`.
 
 ### LSP enrichment
 
-After scanning, the LSP service enriches the graph with cross-reference edges:
+Before scanning, `DetectLanguages` does a fast extension-only walk and `Prewarm` starts all required LSP clients concurrently in a background goroutine. By the time `Enrich` runs, most or all warmup periods have already elapsed.
+
+`Enrich` groups nodes by language and processes all languages concurrently — each language gets its own goroutine that calls `warmupWait()` (a no-op if `Prewarm` already elapsed it) and then fans out across a pool of 10 node-workers:
 
 ```
 lsp.Service.Enrich(ctx, nodes, store)
   ├── Group nodes by language
-  └── Per language: fan out 10 workers
-       enrichNode(ctx, client, langID, node, store):
-         ├── didOpen(uri)
-         ├── textDocument/references(uri, name_line, name_col)
-         │    -> for each location: store.FindNode -> Edge{calls}
-         ├── textDocument/implementation(uri, ...)  [interfaces/types only]
-         │    -> Edge{implements}
-         └── didClose(uri)
+  └── All languages concurrently (one goroutine per language):
+       warmupWait()  -- no-op if Prewarm already elapsed the warmup period
+       Fan out 10 workers per language:
+         enrichNode(ctx, client, langID, node, store):
+           ├── didOpen(uri)
+           ├── textDocument/references(uri, name_line, name_col)
+           │    -> for each location: store.FindNode -> Edge{references}
+           ├── textDocument/implementation(uri, ...)  [interfaces/types only]
+           │    -> Edge{implements}
+           └── didClose(uri)
 ```
 
 ### LSP binary management
@@ -440,6 +447,8 @@ Archives store only base file names (no directory prefix) so they are portable a
 **Hard fail on embed error.** If the sidecar is unreachable, `SaveMemory` writes nothing. This preserves the invariant that every doc has a corresponding vector. Silently saving without a vector would degrade search quality.
 
 **FTS5-only for Agenda.** Agenda queries are keyword-oriented (task title, status lookup). Embeddings add no value and would create an unnecessary dependency on the sidecar for a purely task-management operation.
+
+**Concurrent scanning and enrichment.** Tree-sitter file parsing uses a `runtime.NumCPU()` worker pool because each `ScanFile` call creates an independent `sitter.Parser` — no shared mutable state. LSP enrichment runs all language servers in parallel (`Enrich` launches one goroutine per language, each with its own 10-worker pool) because each language has a dedicated `Client` subprocess with no cross-language locking. LSP pre-warming (`Prewarm`) is fired as a background goroutine before the Tree-sitter scan begins, so server startup and tree-sitter parsing overlap in time.
 
 **Tree-sitter + LSP separation.** Tree-sitter provides fast, offline symbol extraction. LSP provides edges that require a running language server. The index partially succeeds even if LSP servers are unavailable.
 

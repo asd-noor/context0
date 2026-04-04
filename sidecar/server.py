@@ -37,31 +37,9 @@ from .embed import EmbedEngine
 from .inference import InferenceEngine
 from .ralph import ralph_exec, strip_fences
 from .ask import ask as _ask_handler
+from .prompts import DISCOVER_SYSTEM, DISCOVER_USER
 
 log = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Discover prompt
-# ---------------------------------------------------------------------------
-
-_DISCOVER_SYSTEM = (
-    "You are a code-search assistant. "
-    "Generate a Python script that uses subprocess to call fd and/or rg "
-    "to answer a query about the codebase. "
-    "Print results to stdout. "
-    "Output ONLY runnable Python code — no explanation, no markdown."
-)
-
-_DISCOVER_TEMPLATE = """\
-Generate a Python script using subprocess + fd/rg to answer the query.
-The project root is: {project}
-
-Rules:
-- Print findings to stdout.
-- Limit output to the most relevant 30 lines.
-
-Query: {query}
-"""
 
 
 # ---------------------------------------------------------------------------
@@ -246,10 +224,10 @@ class SidecarServer:
                         # Step 1: generate fd/rg script.
                         script = self._inference.generate(
                             [
-                                {"role": "system", "content": _DISCOVER_SYSTEM},
+                                {"role": "system", "content": DISCOVER_SYSTEM},
                                 {
                                     "role": "user",
-                                    "content": _DISCOVER_TEMPLATE.format(
+                                    "content": DISCOVER_USER.format(
                                         query=query_disc, project=project_disc
                                     ),
                                 },

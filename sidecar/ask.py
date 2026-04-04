@@ -18,52 +18,15 @@ from typing import Callable, TYPE_CHECKING
 if TYPE_CHECKING:
     from .inference import InferenceEngine
 
+from .prompts import (
+    ASK_PLAN_SYSTEM,
+    ASK_PLAN_USER,
+    ASK_COMPRESS_SYSTEM,
+    ASK_COMPRESS_USER,
+    ASK_DIRECT_USER,
+)
+
 log = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Prompt templates
-# ---------------------------------------------------------------------------
-
-_PLAN_SYSTEM = (
-    "You are an orchestrator for context0, a project knowledge CLI tool. "
-    "Output ONLY valid JSON — no explanation, no markdown."
-)
-
-_PLAN_TEMPLATE = """\
-Given the developer query below, decide which context0 sub-commands to run \
-to gather the information needed to answer it.
-
-Available commands (each is a JSON array of string arguments):
-  ["memory", "query", "<search text>"]
-  ["agenda", "plan", "list"]
-  ["agenda", "plan", "search", "<search text>"]
-  ["codemap", "outline", "<file path>"]
-  ["codemap", "find", "<symbol name>"]
-  ["codemap", "impact", "<symbol name>"]
-  ["codemap", "status"]
-
-Rules:
-- Return a JSON array of commands (at most 4).
-- If no commands are needed, return an empty array [].
-- Do NOT include commands for which you lack enough context.
-
-Query: {query}
-"""
-
-_COMPRESS_SYSTEM = (
-    "You are a knowledgeable assistant helping a software developer. "
-    "Answer concisely using ONLY the provided context."
-)
-
-_COMPRESS_TEMPLATE = """\
-Using ONLY the context below, answer the developer's query in 3-5 sentences.
-Do not mention that you are summarising.
-
-Query: {query}
-
-Context:
-{context}
-"""
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -112,19 +75,21 @@ def ask(
         # No context gathered — answer directly from the model.
         return inference.generate(
             [
-                {"role": "system", "content": _COMPRESS_SYSTEM},
-                {"role": "user", "content": query},
+                {"role": "system", "content": ASK_COMPRESS_SYSTEM},
+                {"role": "user", "content": ASK_DIRECT_USER.format(query=query)},
             ],
             max_tokens=512,
             temperature=0.3,
         )
 
     context = "\n\n".join(context_parts)
-    prompt = _COMPRESS_TEMPLATE.format(query=query, context=context)
     return inference.generate(
         [
-            {"role": "system", "content": _COMPRESS_SYSTEM},
-            {"role": "user", "content": prompt},
+            {"role": "system", "content": ASK_COMPRESS_SYSTEM},
+            {
+                "role": "user",
+                "content": ASK_COMPRESS_USER.format(query=query, context=context),
+            },
         ],
         max_tokens=512,
         temperature=0.2,
@@ -140,8 +105,8 @@ def _plan(query: str, inference: "InferenceEngine") -> list[list[str]]:
     """Ask the model which context0 commands to run for *query*."""
     raw = inference.generate(
         [
-            {"role": "system", "content": _PLAN_SYSTEM},
-            {"role": "user", "content": _PLAN_TEMPLATE.format(query=query)},
+            {"role": "system", "content": ASK_PLAN_SYSTEM},
+            {"role": "user", "content": ASK_PLAN_USER.format(query=query)},
         ],
         max_tokens=256,
         temperature=0.1,

@@ -15,25 +15,11 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .inference import InferenceEngine
 
+from .prompts import EXEC_REPAIR_SYSTEM, EXEC_REPAIR_USER
+
 log = logging.getLogger(__name__)
 
 MAX_RETRIES = 2
-
-_REPAIR_SYSTEM = (
-    "You are an expert Python programmer. "
-    "You will receive a Python script and the error it produced. "
-    "Output ONLY the corrected Python script — no explanation, no markdown fences."
-)
-
-_REPAIR_TEMPLATE = """\
-The following Python script failed. Fix it so it runs correctly.
-
-=== SCRIPT ===
-{script}
-
-=== ERROR ===
-{error}
-"""
 
 
 # ---------------------------------------------------------------------------
@@ -127,11 +113,13 @@ def _ask_repair(
     inference: "InferenceEngine",
 ) -> str:
     """Ask the inference model to fix *script* given *error*."""
-    prompt = _REPAIR_TEMPLATE.format(script=script, error=error)
     raw = inference.generate(
         [
-            {"role": "system", "content": _REPAIR_SYSTEM},
-            {"role": "user", "content": prompt},
+            {"role": "system", "content": EXEC_REPAIR_SYSTEM},
+            {
+                "role": "user",
+                "content": EXEC_REPAIR_USER.format(script=script, error=error),
+            },
         ],
         max_tokens=1024,
         temperature=0.1,

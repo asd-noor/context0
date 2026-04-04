@@ -11,6 +11,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from .protocol import DEFAULT_INFER_MODEL
+from .downloader import ensure_mlx_model
 
 if TYPE_CHECKING:
     pass
@@ -34,8 +35,9 @@ class InferenceEngine:
         """Preload model weights into memory (called once at sidecar startup)."""
         from mlx_lm import load
 
-        log.info("loading inference model: %s", self._model_id)
-        self._model, self._tokenizer = load(self._model_id)
+        local_path = ensure_mlx_model(self._model_id)
+        log.info("loading inference model: %s", local_path)
+        self._model, self._tokenizer = load(local_path)
         log.info("inference model ready")
 
     # ------------------------------------------------------------------

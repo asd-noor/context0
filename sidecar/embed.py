@@ -11,6 +11,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from .protocol import DEFAULT_EMBED_MODEL, EMBED_DIM
+from .downloader import ensure_model
 
 if TYPE_CHECKING:
     import mlx.core as mx
@@ -34,8 +35,9 @@ class EmbedEngine:
         """Preload model weights into memory (called once at sidecar startup)."""
         from mlx_embeddings import load
 
-        log.info("loading embedding model: %s", self._model_id)
-        self._model, self._tokenizer = load(self._model_id)
+        local_path = ensure_model(self._model_id)
+        log.info("loading embedding model: %s", local_path)
+        self._model, self._tokenizer = load(local_path)
         log.info("embedding model ready")
 
     # ------------------------------------------------------------------

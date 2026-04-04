@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Python sidecar for context0 — embedding and inference engine"
 requires-python = ">=3.11"
 dependencies = [
+    "huggingface-hub>=0.23.0",
     "mlx>=0.22.0",
     "mlx-lm>=0.21.0",
     "mlx-embeddings>=0.3.0",

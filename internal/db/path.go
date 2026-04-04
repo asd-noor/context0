@@ -8,6 +8,27 @@ import (
 	"strings"
 )
 
+// CodeMapDBName returns the SQLite file name for the codemap index.
+//
+// When srcRoot is empty the default name "codemap.sqlite" is returned so that
+// existing projects are unaffected. When srcRoot is provided its absolute path
+// is encoded using the same separator-replacement scheme as ProjectDir
+// (os.PathSeparator → '=') and ".sqlite" is appended, giving each distinct
+// scan root its own independent database file within the project directory.
+func CodeMapDBName(srcRoot string) string {
+	if srcRoot == "" {
+		return "codemap.sqlite"
+	}
+	abs, err := filepath.Abs(srcRoot)
+	if err != nil {
+		// Unreachable in practice; fall back to the default name.
+		return "codemap.sqlite"
+	}
+	transformed := strings.ReplaceAll(abs, string(os.PathSeparator), "=")
+	transformed = strings.TrimPrefix(transformed, "=")
+	return transformed + ".sqlite"
+}
+
 // ProjectDir returns the path to the per-project context0 data directory.
 // The project directory path is transformed by replacing os.PathSeparator
 // with equals signs, matching the spec in AGENTS.md.

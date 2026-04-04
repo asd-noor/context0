@@ -5,9 +5,11 @@ package codemapserver
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"time"
 
+	"context0/internal/db"
 	"context0/internal/graph"
 	"context0/internal/lsp"
 	"context0/internal/pkgmgr"
@@ -28,8 +30,8 @@ func (srv *Server) saveDiagnostics(ctx context.Context) error {
 		var edges []graph.DiagnosticEdge
 
 		for _, d := range lspDiags {
-			line := d.Range.Start.Line + 1      // LSP is 0-indexed
-			col := d.Range.Start.Character + 1  // LSP is 0-indexed
+			line := d.Range.Start.Line + 1     // LSP is 0-indexed
+			col := d.Range.Start.Character + 1 // LSP is 0-indexed
 			gd := graph.Diagnostic{
 				ID:       util.DiagnosticID(filePath, line, col, d.Message),
 				FilePath: filePath,
@@ -109,32 +111,53 @@ type Server struct {
 // until ctx is cancelled; idle-timeout events from the watcher are suppressed
 // (a no-op cancel is used) because the MCP server process lifetime governs
 // shutdown.
-func New(ctx context.Context, rootDir string) (*Server, error) {
-	return newServer(ctx, rootDir, func() {})
+//
+// srcRoot overrides the directory that is scanned for source files. When empty
+// it defaults to rootDir (the git root of the project).
+func New(ctx context.Context, rootDir, srcRoot string) (*Server, error) {
+	return newServer(ctx, rootDir, srcRoot, func() {})
 }
 
 // NewWatch is like New but passes cancel to the watcher so that the watcher's
 // idle-timeout fires cancel(), unblocking the caller's <-ctx.Done().
 // Use this when running context0 codemap --watch <dir>.
-func NewWatch(ctx context.Context, cancel context.CancelFunc, rootDir string) (*Server, error) {
-	return newServer(ctx, rootDir, cancel)
+//
+// srcRoot overrides the directory that is scanned for source files. When empty
+// it defaults to rootDir (the git root of the project).
+func NewWatch(ctx context.Context, cancel context.CancelFunc, rootDir, srcRoot string) (*Server, error) {
+	return newServer(ctx, rootDir, srcRoot, cancel)
 }
 
 // newServer is the shared constructor used by New and NewWatch.
-func newServer(ctx context.Context, rootDir string, cancel context.CancelFunc) (*Server, error) {
+//
+// rootDir determines both the database location (via its git root) and the
+// default scan directory. srcRoot, when non-empty, overrides the directory
+// walked by the scanner, the LSP workspace root, and the file watcher root,
+// without affecting where the index database is stored.
+func newServer(ctx context.Context, rootDir, srcRoot string, cancel context.CancelFunc) (*Server, error) {
 	absRoot := util.FindGitRoot(rootDir)
 
-	store, err := graph.Open(absRoot)
+	// Resolve the scan root: fall back to absRoot when not explicitly set.
+	absScanRoot := absRoot
+	if srcRoot != "" {
+		abs, err := filepath.Abs(srcRoot)
+		if err != nil {
+			return nil, fmt.Errorf("codemapserver: resolve src-root: %w", err)
+		}
+		absScanRoot = abs
+	}
+
+	store, err := graph.Open(absRoot, db.CodeMapDBName(srcRoot))
 	if err != nil {
 		return nil, fmt.Errorf("codemapserver: open store: %w", err)
 	}
 
 	pm := pkgmgr.New()
-	sc := scanner.New(absRoot)
-	lspSvc := lsp.NewService(absRoot, pm)
+	sc := scanner.New(absScanRoot)
+	lspSvc := lsp.NewService(absScanRoot, pm)
 
 	srv := &Server{
-		rootDir:   absRoot,
+		rootDir:   absScanRoot,
 		store:     store,
 		sc:        sc,
 		lspSvc:    lspSvc,
@@ -148,7 +171,7 @@ func newServer(ctx context.Context, rootDir string, cancel context.CancelFunc) (
 
 	// Start file watcher.
 	go func() {
-		w, err := watcher.New(absRoot, sc, lspSvc, store)
+		w, err := watcher.New(absScanRoot, sc, lspSvc, store)
 		if err != nil {
 			return
 		}

@@ -29,26 +29,30 @@ import (
 	"context0/internal/daemon"
 	"context0/internal/db"
 	"context0/internal/graph"
+	"context0/internal/sidecar"
 	"context0/util"
 )
 
 // NewCmd returns the root `codemap` cobra command with all sub-commands attached.
 func NewCmd(projectDir *string) *cobra.Command {
+	var srcRoot string
 	cmd := &cobra.Command{
 		Use:   "codemap",
 		Short: "Code Exploration Engine",
 	}
 
 	// --project is inherited from the root context0 command via PersistentFlags.
+	cmd.PersistentFlags().StringVar(&srcRoot, "src-root", "", "Override the root directory for source scanning (default: project root)")
 
 	cmd.AddCommand(
-		newWatchCmd(projectDir),
-		newIndexCmd(projectDir),
-		newStatusCmd(projectDir),
-		newSymbolsCmd(projectDir),
-		newSymbolCmd(projectDir),
-		newImpactCmd(projectDir),
-		newDiagnosticsCmd(projectDir),
+		newWatchCmd(projectDir, &srcRoot),
+		newIndexCmd(projectDir, &srcRoot),
+		newStatusCmd(projectDir, &srcRoot),
+		newSymbolsCmd(projectDir, &srcRoot),
+		newSymbolCmd(projectDir, &srcRoot),
+		newImpactCmd(projectDir, &srcRoot),
+		newDiagnosticsCmd(projectDir, &srcRoot),
+		newDiscoverCmd(projectDir),
 	)
 	return cmd
 }
@@ -60,8 +64,8 @@ func gitRoot(dir string) string {
 
 // openStore opens the existing graph store for a project in read-only mode.
 // Returns graph.ErrNotIndexed if no index has been built yet.
-func openStore(dir string) (*graph.Store, error) {
-	store, err := graph.OpenReadOnly(gitRoot(dir))
+func openStore(dir, srcRoot string) (*graph.Store, error) {
+	store, err := graph.OpenReadOnly(gitRoot(dir), db.CodeMapDBName(srcRoot))
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +74,7 @@ func openStore(dir string) (*graph.Store, error) {
 
 // ── watch ─────────────────────────────────────────────────────────────────────
 
-func newWatchCmd(projectDir *string) *cobra.Command {
+func newWatchCmd(projectDir, srcRoot *string) *cobra.Command {
 	var daemonMode bool
 	var foreground bool
 	cmd := &cobra.Command{
@@ -80,11 +84,11 @@ func newWatchCmd(projectDir *string) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			switch {
 			case daemonMode:
-				return runWatchDaemon(*projectDir)
+				return runWatchDaemon(*projectDir, *srcRoot)
 			case foreground:
-				return runWatchForeground(*projectDir)
+				return runWatchForeground(*projectDir, *srcRoot)
 			default:
-				return runWatch(*projectDir)
+				return runWatch(*projectDir, *srcRoot)
 			}
 		},
 	}
@@ -96,7 +100,7 @@ func newWatchCmd(projectDir *string) *cobra.Command {
 
 // runWatch is called by the user. It checks for an existing daemon, spawns a
 // detached background process, and prints the PID file path before returning.
-func runWatch(dir string) error {
+func runWatch(dir, srcRoot string) error {
 	root := gitRoot(dir)
 
 	pidPath, err := db.PIDPath(root)
@@ -112,7 +116,7 @@ func runWatch(dir string) error {
 	if err != nil {
 		return fmt.Errorf("codemap watch: resolve executable: %w", err)
 	}
-	if err := daemon.Spawn(exe, root); err != nil {
+	if err := daemon.Spawn(exe, root, srcRoot); err != nil {
 		return fmt.Errorf("codemap watch: %w", err)
 	}
 
@@ -123,7 +127,7 @@ func runWatch(dir string) error {
 // runWatchDaemon is the blocking daemon loop invoked by the spawned background
 // child process via the hidden --daemon flag. The watcher's idle timer is
 // active: the process self-terminates after 5 minutes of file inactivity.
-func runWatchDaemon(dir string) error {
+func runWatchDaemon(dir, srcRoot string) error {
 	root := gitRoot(dir)
 
 	pidPath, err := db.PIDPath(root)
@@ -141,7 +145,7 @@ func runWatchDaemon(dir string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	srv, err := codemapserver.NewWatch(ctx, cancel, root)
+	srv, err := codemapserver.NewWatch(ctx, cancel, root, srcRoot)
 	if err != nil {
 		return fmt.Errorf("codemap watch: %w", err)
 	}
@@ -154,7 +158,7 @@ func runWatchDaemon(dir string) error {
 // runWatchForeground runs the watcher in the foreground. It blocks until
 // SIGINT or SIGTERM is received. No idle-timeout auto-stop is applied — the
 // invoker is fully responsible for the process lifecycle.
-func runWatchForeground(dir string) error {
+func runWatchForeground(dir, srcRoot string) error {
 	root := gitRoot(dir)
 
 	// Register signal handling first, before acquiring any resources, so that
@@ -182,7 +186,7 @@ func runWatchForeground(dir string) error {
 
 	// codemapserver.New uses a no-op cancel so the watcher's idle timer never
 	// triggers a shutdown — the caller controls the lifetime via signals.
-	srv, err := codemapserver.New(ctx, root)
+	srv, err := codemapserver.New(ctx, root, srcRoot)
 	if err != nil {
 		return fmt.Errorf("codemap watch: %w", err)
 	}
@@ -199,20 +203,20 @@ func runWatchForeground(dir string) error {
 
 // ── index ─────────────────────────────────────────────────────────────────────
 
-func newIndexCmd(projectDir *string) *cobra.Command {
+func newIndexCmd(projectDir, srcRoot *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "index",
 		Short: "Build or rebuild the symbol index",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runIndex(*projectDir)
+			return runIndex(*projectDir, *srcRoot)
 		},
 	}
 }
 
-func runIndex(dir string) error {
+func runIndex(dir, srcRoot string) error {
 	ctx := context.Background()
-	srv, err := codemapserver.New(ctx, gitRoot(dir))
+	srv, err := codemapserver.New(ctx, gitRoot(dir), srcRoot)
 	if err != nil {
 		return err
 	}
@@ -239,20 +243,20 @@ func runIndex(dir string) error {
 
 // ── status ────────────────────────────────────────────────────────────────────
 
-func newStatusCmd(projectDir *string) *cobra.Command {
+func newStatusCmd(projectDir, srcRoot *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Show the current codemap index status",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runStatus(*projectDir)
+			return runStatus(*projectDir, *srcRoot)
 		},
 	}
 }
 
-func runStatus(dir string) error {
+func runStatus(dir, srcRoot string) error {
 	ctx := context.Background()
-	store, err := openStore(dir)
+	store, err := openStore(dir, srcRoot)
 	if err != nil {
 		return err
 	}
@@ -272,21 +276,21 @@ func runStatus(dir string) error {
 
 // ── symbols ───────────────────────────────────────────────────────────────────
 
-func newSymbolsCmd(projectDir *string) *cobra.Command {
+func newSymbolsCmd(projectDir, srcRoot *string) *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "outline <file>",
 		Short: "List all symbols defined in <file>",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSymbols(*projectDir, args[0], jsonOut)
+			return runSymbols(*projectDir, *srcRoot, args[0], jsonOut)
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
 	return cmd
 }
 
-func runSymbols(dir, filePath string, jsonOut bool) error {
+func runSymbols(dir, srcRoot, filePath string, jsonOut bool) error {
 	absPath, err := codemapserver.AbsFilePath(filePath)
 	if err != nil {
 		return err
@@ -294,7 +298,7 @@ func runSymbols(dir, filePath string, jsonOut bool) error {
 
 	root := gitRoot(dir)
 	ctx := context.Background()
-	store, err := openStore(dir)
+	store, err := openStore(dir, srcRoot)
 	if err != nil {
 		return err
 	}
@@ -319,14 +323,14 @@ func runSymbols(dir, filePath string, jsonOut bool) error {
 
 // ── symbol ────────────────────────────────────────────────────────────────────
 
-func newSymbolCmd(projectDir *string) *cobra.Command {
+func newSymbolCmd(projectDir, srcRoot *string) *cobra.Command {
 	var withSource, jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "find <name>",
 		Short: "Locate all definitions of <name> across the project",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSymbol(*projectDir, args[0], withSource, jsonOut)
+			return runSymbol(*projectDir, *srcRoot, args[0], withSource, jsonOut)
 		},
 	}
 	cmd.Flags().BoolVar(&withSource, "source", false, "Include source code snippet")
@@ -334,10 +338,10 @@ func newSymbolCmd(projectDir *string) *cobra.Command {
 	return cmd
 }
 
-func runSymbol(dir, name string, withSource, jsonOut bool) error {
+func runSymbol(dir, srcRoot, name string, withSource, jsonOut bool) error {
 	root := gitRoot(dir)
 	ctx := context.Background()
-	store, err := openStore(dir)
+	store, err := openStore(dir, srcRoot)
 	if err != nil {
 		return err
 	}
@@ -384,24 +388,24 @@ func runSymbol(dir, name string, withSource, jsonOut bool) error {
 
 // ── impact ────────────────────────────────────────────────────────────────────
 
-func newImpactCmd(projectDir *string) *cobra.Command {
+func newImpactCmd(projectDir, srcRoot *string) *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "impact <name>",
 		Short: "Show all symbols that transitively depend on <name>",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runImpact(*projectDir, args[0], jsonOut)
+			return runImpact(*projectDir, *srcRoot, args[0], jsonOut)
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
 	return cmd
 }
 
-func runImpact(dir, name string, jsonOut bool) error {
+func runImpact(dir, srcRoot, name string, jsonOut bool) error {
 	root := gitRoot(dir)
 	ctx := context.Background()
-	store, err := openStore(dir)
+	store, err := openStore(dir, srcRoot)
 	if err != nil {
 		return err
 	}
@@ -481,7 +485,7 @@ func severityLabel(s int) string {
 	}
 }
 
-func newDiagnosticsCmd(projectDir *string) *cobra.Command {
+func newDiagnosticsCmd(projectDir, srcRoot *string) *cobra.Command {
 	var (
 		filterFile string
 		jsonOut    bool
@@ -497,7 +501,7 @@ info → hint) then by line number. Use --severity to restrict output to a
 specific level (1=error, 2=warning, 3=info, 4=hint).`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDiagnostics(*projectDir, filterFile, severity, jsonOut)
+			return runDiagnostics(*projectDir, *srcRoot, filterFile, severity, jsonOut)
 		},
 	}
 	cmd.Flags().StringVar(&filterFile, "file", "", "Restrict output to a single file (absolute or relative path)")
@@ -506,11 +510,11 @@ specific level (1=error, 2=warning, 3=info, 4=hint).`,
 	return cmd
 }
 
-func runDiagnostics(dir, filterFile string, severity int, jsonOut bool) error {
+func runDiagnostics(dir, srcRoot, filterFile string, severity int, jsonOut bool) error {
 	root := gitRoot(dir)
 	ctx := context.Background()
 
-	store, err := openStore(dir)
+	store, err := openStore(dir, srcRoot)
 	if err != nil {
 		return err
 	}
@@ -566,4 +570,52 @@ func runDiagnostics(dir, filterFile string, severity int, jsonOut bool) error {
 			severityLabel(d.Severity), rel, d.Line, d.Col, src, d.Message)
 	}
 	return w.Flush()
+}
+
+// ── discover ──────────────────────────────────────────────────────────────────
+
+func newDiscoverCmd(projectDir *string) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "discover <query>",
+		Short: "Natural-language codebase search for non-indexed languages (requires sidecar)",
+		Long: `discover generates a targeted fd/rg script via the local model and executes it
+with the Ralph-loop self-correction.  Use it for languages not indexed by the
+codemap engine, or for ad-hoc structural queries.
+
+Example:
+  context0 codemap discover "Find all files that import sqlite3"
+
+Requires the sidecar to be running (context0 --daemon).`,
+		Args: cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			query := strings.Join(args, " ")
+
+			raw, err := sidecar.SendRaw(sidecar.Request{
+				"cmd":     "discover",
+				"query":   query,
+				"project": *projectDir,
+			})
+			if err != nil {
+				return err
+			}
+
+			var resp struct {
+				OK     bool   `json:"ok"`
+				Output string `json:"output"`
+				Error  string `json:"error,omitempty"`
+			}
+			if err := json.Unmarshal(raw, &resp); err != nil {
+				return fmt.Errorf("discover: decode response: %w", err)
+			}
+
+			if resp.Output != "" {
+				fmt.Print(resp.Output)
+			}
+			if !resp.OK {
+				return fmt.Errorf("discover failed: %s", resp.Error)
+			}
+			return nil
+		},
+	}
+	return cmd
 }

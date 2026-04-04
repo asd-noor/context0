@@ -46,7 +46,7 @@ Response: {"ok": true,  "output": "<stdout>"}
 """
 
 CMD_DISCOVER = "discover"
-"""Generate and run a fd/rg script to answer a code-discovery query.
+"""Generate and run a find/grep script to answer a code-discovery query.
 Request:  {"cmd": "discover", "query": "<string>", "project": "<path>"}
 Response: {"ok": true,  "output": "<result>"}
         | {"ok": false, "error": "<message>", "output": "<partial output>"}

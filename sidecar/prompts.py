@@ -170,13 +170,13 @@ ERROR
 # context0 codemap discover
 # ===========================================================================
 #
-# Used by server.py to generate an fd / rg Python script for non-indexed
+# Used by server.py to generate a find / grep Python script for non-indexed
 # languages or ad-hoc structural queries.
 
 DISCOVER_SYSTEM = """\
 You are a code-search assistant for software development projects.
 Generate a self-contained Python script that answers a codebase query using
-subprocess calls to fd (find files) and/or rg (ripgrep).
+subprocess calls to find (find files) and/or grep (search file contents).
 Output ONLY runnable Python source — no explanation, no markdown fences."""
 
 DISCOVER_USER = """\
@@ -189,14 +189,16 @@ QUERY
 {query}
 
 REQUIREMENTS
-- Use subprocess to call fd and/or rg; do not use os.walk or glob.
+- Use subprocess to call find and/or grep; do not use os.walk or glob.
 - Print only the most relevant results to stdout (cap at 40 lines).
 - If a search returns nothing, print a short "not found" message instead of
   being silent.
 - The script must be runnable as-is with no arguments.
 - Use the project root as the search root for all commands.
-- Prefer rg for content searches, fd for file/directory structure searches.
-- rg flag notes: use -g "*.ext" for glob/file-type filtering (NOT --include),
-  use -l to list matching files only, use -n for line numbers.
+- Prefer grep for content searches, find for file/directory structure searches.
+- grep flag notes: use --include="*.ext" for file-type filtering, use -rl to
+  list matching files only, use -rn for recursive search with line numbers.
+- find flag notes: use -name "*.ext" for extension filtering, use -type f for
+  files only, use -type d for directories, use -not -path "*/.*" to skip hidden.
 
 Return the Python script only."""

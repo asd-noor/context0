@@ -567,7 +567,7 @@ func newDiscoverCmd(projectDir *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "discover <query>",
 		Short: "Natural-language codebase search for non-indexed languages (requires sidecar)",
-		Long: `discover generates a targeted fd/rg script via the local model and executes it
+		Long: `discover generates a targeted find/grep script via the local model and executes it
 with the Ralph-loop self-correction.  Use it for languages not indexed by the
 codemap engine, or for ad-hoc structural queries.
 

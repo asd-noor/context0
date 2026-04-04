@@ -10,11 +10,13 @@ import (
 
 	cmdagenda "context0/cmd/agenda"
 	cmdask "context0/cmd/ask"
+	cmdbackup "context0/cmd/backup"
 	cmdcodemap "context0/cmd/codemap"
 	cmdexec "context0/cmd/exec"
 	cmdexport "context0/cmd/export"
 	cmdimport "context0/cmd/import"
 	cmdmemory "context0/cmd/memory"
+	cmdrecover "context0/cmd/recover"
 	"context0/internal/sidecar"
 )
 
@@ -96,6 +98,8 @@ It provides:
 		cmdcodemap.NewCmd(&projectDir),
 		cmdexec.NewCmd(&projectDir),
 		cmdask.NewCmd(&projectDir),
+		cmdbackup.NewCmd(&projectDir),
+		cmdrecover.NewCmd(&projectDir),
 		cmdexport.NewCmd(&projectDir),
 		cmdimport.NewCmd(&projectDir),
 	)

@@ -20,7 +20,6 @@ import (
 
 	"context0/internal/graph"
 	"context0/internal/pkgmgr"
-	"context0/util"
 )
 
 const (
@@ -108,7 +107,7 @@ func newClient(ctx context.Context, binary string, args []string, rootDir string
 		cmd:     cmd,
 		stdin:   stdin,
 		reader:  bufio.NewReaderSize(stdout, 1<<20),
-		rootURI: util.PathToURI(absRoot),
+		rootURI: PathToURI(absRoot),
 		startAt: time.Now(),
 	}
 
@@ -457,7 +456,7 @@ func (s *Service) DrainDiagnostics() map[string][]Diagnostic {
 // enrichNode opens the file, queries references/implementations for node n,
 // and returns all edges found.
 func (s *Service) enrichNode(ctx context.Context, c *Client, langID string, n graph.Node, store *graph.Store) []graph.Edge {
-	uri := util.PathToURI(n.FilePath)
+	uri := PathToURI(n.FilePath)
 	text, err := os.ReadFile(n.FilePath)
 	if err != nil {
 		return nil
@@ -489,7 +488,7 @@ func (s *Service) enrichNode(ctx context.Context, c *Client, langID string, n gr
 	// references: (caller) --references--> (n)
 	refs, _ := c.references(ctx, uri, pos)
 	for _, loc := range refs {
-		refPath := util.URIToPath(loc.URI)
+		refPath := URIToPath(loc.URI)
 		refLine := loc.Range.Start.Line + 1
 		refCol := loc.Range.Start.Character + 1
 		caller, err := store.FindNode(ctx, refPath, refLine, refCol)
@@ -510,7 +509,7 @@ func (s *Service) enrichNode(ctx context.Context, c *Client, langID string, n gr
 	if n.Kind == "interface" || n.Kind == "type" {
 		impls, _ := c.implementations(ctx, uri, pos)
 		for _, loc := range impls {
-			implPath := util.URIToPath(loc.URI)
+			implPath := URIToPath(loc.URI)
 			implLine := loc.Range.Start.Line + 1
 			implCol := loc.Range.Start.Character + 1
 			implNode, err := store.FindNode(ctx, implPath, implLine, implCol)

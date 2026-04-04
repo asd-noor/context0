@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"context0/internal/graph"
-	"context0/util"
 )
 
 // openTestStore creates a Store backed by a temporary directory that is
@@ -25,7 +24,7 @@ func openTestStore(t *testing.T) *graph.Store {
 
 func makeNode(file, name, kind string) graph.Node {
 	return graph.Node{
-		ID:        util.NodeID(file, name, kind),
+		ID:        graph.NodeID(file, name, kind),
 		Name:      name,
 		Kind:      kind,
 		FilePath:  file,
@@ -248,7 +247,7 @@ func TestFindNode(t *testing.T) {
 	ctx := context.Background()
 
 	n := graph.Node{
-		ID: util.NodeID("/a/main.go", "main", "function"), Name: "main", Kind: "function",
+		ID: graph.NodeID("/a/main.go", "main", "function"), Name: "main", Kind: "function",
 		FilePath: "/a/main.go", LineStart: 5, LineEnd: 20,
 		ColStart: 1, ColEnd: 1, NameLine: 5, NameCol: 6,
 	}
@@ -271,7 +270,7 @@ func TestFindNodeOutsideRange(t *testing.T) {
 	ctx := context.Background()
 
 	n := graph.Node{
-		ID: util.NodeID("/a/main.go", "main", "function"), Name: "main", Kind: "function",
+		ID: graph.NodeID("/a/main.go", "main", "function"), Name: "main", Kind: "function",
 		FilePath: "/a/main.go", LineStart: 5, LineEnd: 20,
 		ColStart: 1, ColEnd: 1, NameLine: 5, NameCol: 6,
 	}
@@ -418,7 +417,7 @@ func TestClear(t *testing.T) {
 
 func makeDiag(file string, line int, msg string) graph.Diagnostic {
 	return graph.Diagnostic{
-		ID:       util.DiagnosticID(file, line, 1, msg),
+		ID:       graph.DiagnosticID(file, line, 1, msg),
 		FilePath: file,
 		Line:     line,
 		Col:      1,
@@ -475,12 +474,12 @@ func TestGetAllDiagnosticsOrderedBySeverity(t *testing.T) {
 	ctx := context.Background()
 
 	warning := graph.Diagnostic{
-		ID:       util.DiagnosticID("/a/main.go", 5, 1, "warn"),
+		ID:       graph.DiagnosticID("/a/main.go", 5, 1, "warn"),
 		FilePath: "/a/main.go", Line: 5, Col: 1,
 		Severity: graph.DiagnosticSeverityWarning, Message: "warn",
 	}
 	err := graph.Diagnostic{
-		ID:       util.DiagnosticID("/a/main.go", 3, 1, "err"),
+		ID:       graph.DiagnosticID("/a/main.go", 3, 1, "err"),
 		FilePath: "/a/main.go", Line: 3, Col: 1,
 		Severity: graph.DiagnosticSeverityError, Message: "err",
 	}

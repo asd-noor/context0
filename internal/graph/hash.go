@@ -1,5 +1,4 @@
-// Package util provides shared utilities for context0.
-package util
+package graph
 
 import (
 	"crypto/sha256"

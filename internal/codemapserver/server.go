@@ -16,7 +16,6 @@ import (
 	"context0/internal/pkgmgr"
 	"context0/internal/scanner"
 	"context0/internal/watcher"
-	"context0/util"
 )
 
 // saveDiagnostics drains the LSP service diagnostic cache, converts every
@@ -25,7 +24,7 @@ import (
 func (srv *Server) saveDiagnostics(ctx context.Context) error {
 	raw := srv.lspSvc.DrainDiagnostics()
 	for uri, lspDiags := range raw {
-		filePath := util.URIToPath(uri)
+		filePath := lsp.URIToPath(uri)
 
 		var diags []graph.Diagnostic
 		var edges []graph.DiagnosticEdge
@@ -34,7 +33,7 @@ func (srv *Server) saveDiagnostics(ctx context.Context) error {
 			line := d.Range.Start.Line + 1     // LSP is 0-indexed
 			col := d.Range.Start.Character + 1 // LSP is 0-indexed
 			gd := graph.Diagnostic{
-				ID:       util.DiagnosticID(filePath, line, col, d.Message),
+				ID:       graph.DiagnosticID(filePath, line, col, d.Message),
 				FilePath: filePath,
 				Line:     line,
 				Col:      col,
@@ -136,7 +135,7 @@ func NewWatch(ctx context.Context, cancel context.CancelFunc, rootDir, srcRoot s
 // walked by the scanner, the LSP workspace root, and the file watcher root,
 // without affecting where the index database is stored.
 func newServer(ctx context.Context, rootDir, srcRoot string, cancel context.CancelFunc) (*Server, error) {
-	absRoot := util.FindGitRoot(rootDir)
+	absRoot := FindGitRoot(rootDir)
 
 	// Resolve the scan root. A bare basename (no path separator) is treated as
 	// a DB-naming label only — scanning falls back to absRoot. A relative or

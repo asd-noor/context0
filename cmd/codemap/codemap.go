@@ -30,7 +30,6 @@ import (
 	"context0/internal/db"
 	"context0/internal/graph"
 	"context0/internal/sidecar"
-	"context0/util"
 )
 
 // NewCmd returns the root `codemap` cobra command with all sub-commands attached.
@@ -70,7 +69,7 @@ func NewCmd(projectDir *string) *cobra.Command {
 
 // gitRoot resolves the git root from dir.
 func gitRoot(dir string) string {
-	return util.FindGitRoot(dir)
+	return codemapserver.FindGitRoot(dir)
 }
 
 // openStore opens the existing graph store for a project in read-only mode.

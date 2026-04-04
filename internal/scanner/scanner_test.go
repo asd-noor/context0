@@ -4,10 +4,22 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"context0/internal/scanner"
 )
+
+// projectRoot returns the absolute path to the context0 repository root
+// (two directories up from internal/scanner).
+func projectRoot(t *testing.T) string {
+	t.Helper()
+	root, err := filepath.Abs("../../")
+	if err != nil {
+		t.Fatalf("projectRoot: %v", err)
+	}
+	return root
+}
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -27,13 +39,9 @@ func newScanner(root string) *scanner.Scanner {
 // ── ScanFile — Go ─────────────────────────────────────────────────────────────
 
 func TestScanFileGoFunctions(t *testing.T) {
-	dir := t.TempDir()
-	path := writeFile(t, dir, "main.go", `package main
-
-func main() {}
-func helper(x int) string { return "" }
-`)
-	s := newScanner(dir)
+	root := projectRoot(t)
+	path := filepath.Join(root, "util", "hash.go")
+	s := newScanner(root)
 	nodes, err := s.ScanFile(context.Background(), path)
 	if err != nil {
 		t.Fatalf("ScanFile: %v", err)
@@ -45,22 +53,18 @@ func helper(x int) string { return "" }
 	for _, n := range nodes {
 		names[n.Name] = n.Kind
 	}
-	if names["main"] != "function" {
-		t.Errorf("expected main to be function, got %q", names["main"])
+	if names["NodeID"] != "function" {
+		t.Errorf("expected NodeID to be function, got %q", names["NodeID"])
 	}
-	if names["helper"] != "function" {
-		t.Errorf("expected helper to be function, got %q", names["helper"])
+	if names["DiagnosticID"] != "function" {
+		t.Errorf("expected DiagnosticID to be function, got %q", names["DiagnosticID"])
 	}
 }
 
 func TestScanFileGoMethod(t *testing.T) {
-	dir := t.TempDir()
-	path := writeFile(t, dir, "svc.go", `package svc
-
-type Service struct{}
-func (s *Service) Do() {}
-`)
-	s := newScanner(dir)
+	root := projectRoot(t)
+	path := filepath.Join(root, "internal", "memory", "engine.go")
+	s := newScanner(root)
 	nodes, err := s.ScanFile(context.Background(), path)
 	if err != nil {
 		t.Fatalf("ScanFile: %v", err)
@@ -69,27 +73,20 @@ func (s *Service) Do() {}
 	for _, n := range nodes {
 		kinds[n.Name] = n.Kind
 	}
-	if kinds["Service"] != "type" {
-		t.Errorf("expected Service kind=type, got %q", kinds["Service"])
+	if kinds["Engine"] != "type" {
+		t.Errorf("expected Engine kind=type, got %q", kinds["Engine"])
 	}
-	if kinds["Do"] != "method" {
-		t.Errorf("expected Do kind=method, got %q", kinds["Do"])
+	if kinds["SaveMemory"] != "method" {
+		t.Errorf("expected SaveMemory kind=method, got %q", kinds["SaveMemory"])
 	}
 }
 
 // ── ScanFile — Python ─────────────────────────────────────────────────────────
 
 func TestScanFilePython(t *testing.T) {
-	dir := t.TempDir()
-	path := writeFile(t, dir, "app.py", `
-def run():
-    pass
-
-class Server:
-    def start(self):
-        pass
-`)
-	s := newScanner(dir)
+	root := projectRoot(t)
+	path := filepath.Join(root, "sidecar", "embed.py")
+	s := newScanner(root)
 	nodes, err := s.ScanFile(context.Background(), path)
 	if err != nil {
 		t.Fatalf("ScanFile: %v", err)
@@ -98,14 +95,14 @@ class Server:
 	for _, n := range nodes {
 		kinds[n.Name] = n.Kind
 	}
-	if kinds["run"] != "function" {
-		t.Errorf("expected run=function, got %q", kinds["run"])
+	if kinds["EmbedEngine"] != "class" {
+		t.Errorf("expected EmbedEngine=class, got %q", kinds["EmbedEngine"])
 	}
-	if kinds["Server"] != "class" {
-		t.Errorf("expected Server=class, got %q", kinds["Server"])
+	if kinds["load"] != "function" {
+		t.Errorf("expected load=function, got %q", kinds["load"])
 	}
-	if kinds["start"] != "function" {
-		t.Errorf("expected start=function, got %q", kinds["start"])
+	if kinds["embed"] != "function" {
+		t.Errorf("expected embed=function, got %q", kinds["embed"])
 	}
 }
 
@@ -236,12 +233,9 @@ func TestScanFileUnsupportedExtension(t *testing.T) {
 // ── ScanFile — node fields ────────────────────────────────────────────────────
 
 func TestScanFileNodeFields(t *testing.T) {
-	dir := t.TempDir()
-	path := writeFile(t, dir, "calc.go", `package calc
-
-func Add(a, b int) int { return a + b }
-`)
-	s := newScanner(dir)
+	root := projectRoot(t)
+	path := filepath.Join(root, "util", "hash.go")
+	s := newScanner(root)
 	nodes, err := s.ScanFile(context.Background(), path)
 	if err != nil {
 		t.Fatalf("ScanFile: %v", err)
@@ -270,21 +264,30 @@ func Add(a, b int) int { return a + b }
 // ── Scan — directory walk ─────────────────────────────────────────────────────
 
 func TestScanWalkFindsMultipleFiles(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, dir, "a.go", `package p
-func A() {}
-`)
-	writeFile(t, dir, "b.py", `
-def b():
-    pass
-`)
-	s := newScanner(dir)
-	nodes, err := s.Scan(context.Background(), dir)
+	root := projectRoot(t)
+	s := newScanner(root)
+	nodes, err := s.Scan(context.Background(), root)
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
 	if len(nodes) < 2 {
 		t.Fatalf("expected at least 2 nodes, got %d", len(nodes))
+	}
+	// Verify at least one .go symbol and one .py symbol are present.
+	var hasGo, hasPy bool
+	for _, n := range nodes {
+		if strings.HasSuffix(n.FilePath, ".go") {
+			hasGo = true
+		}
+		if strings.HasSuffix(n.FilePath, ".py") {
+			hasPy = true
+		}
+	}
+	if !hasGo {
+		t.Error("expected at least one symbol from a .go file")
+	}
+	if !hasPy {
+		t.Error("expected at least one symbol from a .py file")
 	}
 }
 

@@ -22,7 +22,6 @@ import (
 	gitignore "github.com/sabhiram/go-gitignore"
 
 	"context0/internal/graph"
-	"context0/util"
 )
 
 // langDef binds a Tree-sitter language grammar to its query.
@@ -191,7 +190,7 @@ func (s *Scanner) ScanFile(ctx context.Context, path string) ([]graph.Node, erro
 		nameStart := nameNode.StartPosition()
 
 		n := graph.Node{
-			ID:        util.NodeID(absPath, symbolName, defKind),
+			ID:        graph.NodeID(absPath, symbolName, defKind),
 			Name:      symbolName,
 			Kind:      defKind,
 			FilePath:  absPath,

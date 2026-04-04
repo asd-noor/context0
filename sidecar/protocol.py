@@ -58,7 +58,7 @@ Response: {"ok": true,  "output": "<result>"}
 
 #: Default embedding model — bge-small-en-v1.5, 384 dims.
 #: Override with $CTX0_EMBED_MODEL.
-DEFAULT_EMBED_MODEL: str = "mlx-community/bge-small-en-v1.5-8bit"
+DEFAULT_EMBED_MODEL: str = "mlx-community/bge-small-en-v1.5-4bit"
 
 #: Default inference model — Qwen2.5-Coder-3B 4-bit quantised for Apple Silicon.
 #: Override with $CTX0_INFER_MODEL.

@@ -64,7 +64,7 @@ END;
 // directory, applies the schema, runs any pending migrations, and returns
 // the db handle.
 func Open(projectPath string) (*sql.DB, error) {
-	dbPath, err := dbutil.DBPath(projectPath, "agenda.sqlite")
+	dbPath, err := dbutil.DBPath(projectPath, "agenda-ctx0.sqlite")
 	if err != nil {
 		return nil, fmt.Errorf("agenda: resolve db path: %w", err)
 	}

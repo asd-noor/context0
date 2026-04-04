@@ -62,7 +62,7 @@ func init() {
 // Open opens (or creates) the memory SQLite database for the given project
 // directory, applies the schema, and returns the db handle.
 func Open(projectPath string) (*sql.DB, error) {
-	dbPath, err := dbutil.DBPath(projectPath, "memory.sqlite")
+	dbPath, err := dbutil.DBPath(projectPath, "memory-ctx0.sqlite")
 	if err != nil {
 		return nil, fmt.Errorf("memory: resolve db path: %w", err)
 	}

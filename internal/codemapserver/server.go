@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -137,9 +138,11 @@ func NewWatch(ctx context.Context, cancel context.CancelFunc, rootDir, srcRoot s
 func newServer(ctx context.Context, rootDir, srcRoot string, cancel context.CancelFunc) (*Server, error) {
 	absRoot := util.FindGitRoot(rootDir)
 
-	// Resolve the scan root: fall back to absRoot when not explicitly set.
+	// Resolve the scan root. A bare basename (no path separator) is treated as
+	// a DB-naming label only — scanning falls back to absRoot. A relative or
+	// absolute path (contains a separator) is expanded and used as the scan dir.
 	absScanRoot := absRoot
-	if srcRoot != "" {
+	if srcRoot != "" && strings.ContainsRune(srcRoot, filepath.Separator) {
 		abs, err := filepath.Abs(srcRoot)
 		if err != nil {
 			return nil, fmt.Errorf("codemapserver: resolve src-root: %w", err)

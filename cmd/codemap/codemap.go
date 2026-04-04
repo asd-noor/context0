@@ -42,7 +42,18 @@ func NewCmd(projectDir *string) *cobra.Command {
 	}
 
 	// --project is inherited from the root context0 command via PersistentFlags.
-	cmd.PersistentFlags().StringVar(&srcRoot, "src-root", "", "Override the root directory for source scanning (default: project root)")
+	cmd.PersistentFlags().StringVar(&srcRoot, "src-root", "", "Override the root directory for source scanning (default: basename of project root)")
+
+	// Default --src-root to the basename of the project root so the codemap DB
+	// is named after the project (e.g. "myrepo-ctx0.sqlite"). The value is set
+	// here rather than as a static flag default because projectDir is resolved
+	// at flag-parse time, after NewCmd returns.
+	cmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if srcRoot == "" {
+			srcRoot = filepath.Base(*projectDir)
+		}
+		return nil
+	}
 
 	cmd.AddCommand(
 		newWatchCmd(projectDir, &srcRoot),

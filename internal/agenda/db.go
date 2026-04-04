@@ -17,18 +17,22 @@ PRAGMA foreign_keys=ON;
 
 CREATE TABLE IF NOT EXISTS agendas (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    is_active        INTEGER NOT NULL DEFAULT 1,
-    git_branch       TEXT    NOT NULL DEFAULT '',
+    is_active        INTEGER  NOT NULL DEFAULT 1,
+    git_branch       TEXT     NOT NULL DEFAULT '',
+    priority         TEXT     NOT NULL DEFAULT 'normal',
     title            TEXT,
     description      TEXT,
     acceptance_guard TEXT,
-    created_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+    completed_at     DATETIME,
+    deleted_at       DATETIME
 );
 
 CREATE TABLE IF NOT EXISTS tasks (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
     agenda_id INTEGER NOT NULL,
     details   TEXT    NOT NULL,
+    notes     TEXT    NOT NULL DEFAULT '',
     status    TEXT    NOT NULL DEFAULT 'pending',
     FOREIGN KEY (agenda_id) REFERENCES agendas(id) ON DELETE CASCADE
 );
@@ -56,6 +60,32 @@ CREATE TRIGGER IF NOT EXISTS agendas_fts_update AFTER UPDATE ON agendas BEGIN
     VALUES ('delete', old.id, old.title, old.description, old.acceptance_guard);
     INSERT INTO agendas_fts(rowid, title, description, acceptance_guard)
     VALUES (new.id, new.title, new.description, new.acceptance_guard);
+END;
+
+-- tasks_fts indexes task details and notes against the tasks content table.
+-- agenda_id is resolved via the tasks table (tasks_fts.rowid = tasks.id).
+CREATE VIRTUAL TABLE IF NOT EXISTS tasks_fts USING fts5(
+    details,
+    notes,
+    content='tasks',
+    content_rowid='id'
+);
+
+CREATE TRIGGER IF NOT EXISTS tasks_fts_insert AFTER INSERT ON tasks BEGIN
+    INSERT INTO tasks_fts(rowid, details, notes)
+    VALUES (new.id, new.details, new.notes);
+END;
+
+CREATE TRIGGER IF NOT EXISTS tasks_fts_delete AFTER DELETE ON tasks BEGIN
+    INSERT INTO tasks_fts(tasks_fts, rowid, details, notes)
+    VALUES ('delete', old.id, old.details, old.notes);
+END;
+
+CREATE TRIGGER IF NOT EXISTS tasks_fts_update AFTER UPDATE ON tasks BEGIN
+    INSERT INTO tasks_fts(tasks_fts, rowid, details, notes)
+    VALUES ('delete', old.id, old.details, old.notes);
+    INSERT INTO tasks_fts(rowid, details, notes)
+    VALUES (new.id, new.details, new.notes);
 END;
 `
 

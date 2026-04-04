@@ -1,0 +1,14 @@
+[project]
+name = "context0-sidecar"
+version = "0.1.0"
+description = "Python sidecar for context0 — embedding and inference engine"
+requires-python = ">=3.11"
+dependencies = [
+    "mlx>=0.22.0",
+    "mlx-lm>=0.21.0",
+    "mlx-embeddings>=0.3.0",
+]
+
+[tool.uv]
+# Not a distributable package — just a dependency manifest for `uv run`.
+package = false

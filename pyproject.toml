@@ -10,6 +10,17 @@ dependencies = [
     "mlx-embeddings>=0.1.0",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests/sidecar"]
+pythonpath = ["."]
+
 [tool.uv]
 # Not a distributable package — just a dependency manifest for `uv run`.
 package = false

@@ -12,7 +12,7 @@ Startup sequence:
 All paths can be overridden via environment variables for testing:
   CTX0_SOCKET      — UDS socket path  (default: ~/.context0/channel.sock)
   CTX0_SIDECAR_PID — PID file path    (default: ~/.context0/sidecar.pid)
-  CTX0_EMBED_MODEL — embedding model  (default: BAAI/bge-small-en-v1.5)
+  CTX0_EMBED_MODEL — embedding model  (default: mlx-community/bge-small-en-v1.5-4bit)
   CTX0_INFER_MODEL — inference model  (default: mlx-community/Qwen2.5-Coder-3B-Instruct-4bit)
 
 Usage (invoked by the Go binary):

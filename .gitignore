@@ -6,6 +6,7 @@
 
 # Project-local Go caches (not to be committed)
 sidecar/__pycache__/
+tests/sidecar/__pycache__/
 
 # Local mise state
 .mise/

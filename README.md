@@ -1,70 +1,67 @@
 # Context0
 
-A persistent knowledge layer for AI coding agents. Context0 gives agents long-term memory, structured task management, codebase understanding, and local LLM inference -- all through a single CLI binary backed by per-project SQLite databases.
+A persistent knowledge layer for AI coding agents — long-term memory, task management, and codebase understanding, backed by per-project SQLite databases.
 
-## What it does
+> **macOS (Apple Silicon) only.** The Python sidecar uses [MLX](https://github.com/ml-explore/mlx) for local inference and embedding, which requires an M-series Mac.
 
-- **Memory** -- Save and retrieve project knowledge using hybrid search (keyword + vector). AI agents store decisions, architecture notes, bug fixes, and context that persists across sessions.
-- **Agenda** -- Structured task plans with acceptance criteria, optional tasks, and automatic completion tracking. Agents create plans, work through tasks, and verify done-conditions before marking them complete.
-- **Code Exploration** -- A semantic code graph built from Tree-sitter AST parsing and LSP cross-references. Agents look up symbol definitions, list file symbols, and analyze change impact before modifying code. Supports Go, Python, JavaScript, TypeScript, Lua, and Zig. Files are parsed concurrently (worker pool) and all language servers are warmed up and enriched in parallel. Also captures and graphs LSP diagnostics across files.
-- **Library Docs** -- `context0 docs-lib <library> <question>` fetches up-to-date official documentation from Context7 for any library or framework. The `ask` planner calls this automatically when a query involves a specific external dependency.
-- **Python Sidecar** -- A local MLX-backed inference and embedding server. Powers embedding (replacing Ollama), LLM generation (`ask`, `exec`, `discover`), and self-correcting Python script execution via the Ralph-loop. Before each repair attempt the sidecar runs a triage inference call: if the error is library-API-related it fetches Context7 docs and passes them into the repair prompt; failures degrade silently so the loop always continues. Managed with `context0 --daemon`.
-- **Data Management** -- Four commands cover backup and portability: `backup` snapshots databases to `~/.context0/backup/`; `recover` restores the latest snapshot automatically; `export` packs databases into a portable `.tar.gz`; `import` restores from any `.tar.gz` after creating a safety snapshot.
+## Features
+
+- **Memory** — hybrid keyword + vector search for project knowledge across sessions
+- **Agenda** — structured task plans with acceptance criteria and completion tracking
+- **Code Exploration** — semantic graph from Tree-sitter + LSP; symbol lookup and impact analysis
+- **Library Docs** — fetch up-to-date official docs via `context0 docs-lib <library> <question>`
+- **Python Sidecar** — local MLX inference and embedding server; powers `ask`, `exec`, and memory
+- **Data Management** — `backup`, `recover`, `export`, `import` for database portability
 
 ## Quick start
 
-```
-# Build
-CGO_ENABLED=1 go build -tags fts5 -o context0 .
-
-# Or with mise (injects git tag as version)
+```sh
+# Build and install
 mise run build
+mise run install
 
-# Check version
-context0 --version
-
-# Start the Python sidecar (required for memory and ask/exec)
+# Start the sidecar (required for memory and ask/exec)
 context0 --daemon
 
-# Save a memory
-context0 memory save --category architecture --topic "Auth design" --content "JWT with refresh tokens..."
-
-# Query memories (full content by default)
+# Save and query memory
+context0 memory save --category arch --topic "Auth" --content "JWT with refresh tokens"
 context0 memory query "authentication"
 
-# Create a task plan with acceptance criteria
+# Create a task plan
 context0 agenda plan create --title "Add auth" \
-  --guard "all tests pass and routes return 401 without token" \
-  --task "Implement JWT validation" \
-  --task "Add middleware to router"
+  --guard "all tests pass" \
+  --task "Implement JWT validation"
 
-# Ask a natural-language question across all engines
-context0 ask "What caching strategy does this project use?"
-
-# Start the code exploration daemon
+# Index and explore the codebase
 context0 codemap watch
-
-# Look up a symbol with source code
-context0 codemap symbol SaveMemory --source
+context0 codemap find SaveMemory --source
 ```
 
-All commands accept `--project <dir>` (or `-p`) to target a specific project. Defaults to CWD.
+All commands accept `-p <dir>` to target a specific project (defaults to CWD).
 
-Set `CONTEXT7_API_KEY` in your environment for higher rate limits on `docs-lib` and the Ralph-loop doc triage (free key at context7.com/dashboard; unauthenticated access still works but is rate-limited).
+## Development
+
+```sh
+mise run dev            # build dev binary to /tmp/context0-dev
+mise run check          # fmt + vet
+mise run test:fast      # tests with no external deps
+mise run daemon         # build dev binary + start sidecar
+mise run codemap:index  # build dev binary + index codebase
+mise run test           # full suite (requires daemon + index)
+```
+
+See [Testing](docs/TESTING.md) for setup details.
 
 ## Documentation
 
-- **[Installation](docs/INSTALL.md)** -- Prerequisites, build instructions, and sidecar setup
-- **[Usage Guide](docs/USAGE.md)** -- Complete CLI reference for all engines
-- **[Architecture](docs/ARCHITECTURE.md)** -- System design, data flows, schemas, and key decisions
+- [Installation](docs/INSTALL.md) — prerequisites, build, sidecar setup
+- [Usage Guide](docs/USAGE.md) — full CLI reference
+- [Architecture](docs/ARCHITECTURE.md) — design, data flows, schemas
+- [Testing](docs/TESTING.md) — test setup and coverage
 
 ## Tech stack
 
 Go, SQLite (FTS5 + sqlite-vec), Tree-sitter, LSP, Python (MLX + uv), cobra.
-
-## Data storage
-
-All data lives in `~/.context0/<project-path>/` as SQLite files. Database names carry a `-ctx0` suffix for easy identification (e.g. `memory-ctx0.sqlite`, `agenda-ctx0.sqlite`, `<project>-ctx0.sqlite`). The sidecar socket and PID file live at `~/.context0/channel.sock` and `~/.context0/sidecar.pid`. Automatic backups are written to `~/.context0/backup/<project>/`.
 
 ## License
 
@@ -72,4 +69,4 @@ All data lives in `~/.context0/<project-path>/` as SQLite files. Database names 
 
 ## Acknowledgements
 
-Library documentation is powered by [Context7](https://context7.com) — up-to-date, version-specific docs for LLMs and AI coding agents.
+Library documentation powered by [Context7](https://context7.com).

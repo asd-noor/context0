@@ -177,8 +177,11 @@ func (e *Engine) UpdateMemory(id int64, category, topic, content string) (*Doc, 
 	if err != nil {
 		return nil, fmt.Errorf("update_memory: serialize embedding: %w", err)
 	}
+	if _, err := tx.Exec(`DELETE FROM docs_vec WHERE id=?`, id); err != nil {
+		return nil, fmt.Errorf("update_memory: delete old vec: %w", err)
+	}
 	if _, err := tx.Exec(
-		`INSERT OR REPLACE INTO docs_vec (id, embedding) VALUES (?, ?)`,
+		`INSERT INTO docs_vec (id, embedding) VALUES (?, ?)`,
 		id, blob,
 	); err != nil {
 		return nil, fmt.Errorf("update_memory: update vec: %w", err)

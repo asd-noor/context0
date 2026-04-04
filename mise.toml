@@ -8,14 +8,96 @@ GOFLAGS = "-tags=sqlite_fts5"
 [env.GOPATH]
 value = "{{env.HOME}}/.local/gopath/1.26.1"
 
+# ---------------------------------------------------------------------------
+# Build
+# ---------------------------------------------------------------------------
+
 [tasks.build]
-description = "Build context0 binary with FTS5 and sqlite-vec support"
+description = "Build context0 binary (version from git tag)"
 run = "CGO_ENABLED=1 go build -ldflags \"-X main.Version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)\" -o context0 ."
 
+[tasks.dev]
+description = "Build dev binary to /tmp/context0-dev (no version tag)"
+run = "CGO_ENABLED=1 go build -o /tmp/context0-dev ."
+
 [tasks.install]
-description = "Build and install context0 to INSTALL_DIR (default: ~/.local/bin)"
+description = "Build and install to INSTALL_DIR (default: ~/.local/bin)"
 depends = ["build"]
 run = """
 install -Dm755 context0 "${INSTALL_DIR:-$HOME/.local/bin}/context0"
 rm context0
 """
+
+[tasks.clean]
+description = "Remove built binaries"
+run = "rm -f context0 /tmp/context0-dev"
+
+# ---------------------------------------------------------------------------
+# Code quality
+# ---------------------------------------------------------------------------
+
+[tasks.fmt]
+description = "Format Go source files"
+run = "gofmt -w ."
+
+[tasks.lint]
+description = "Run go vet across all packages"
+run = "go vet ./..."
+
+[tasks.check]
+description = "Format and vet (fmt + lint)"
+depends = ["fmt", "lint"]
+
+# ---------------------------------------------------------------------------
+# Test setup — run once before the full suite
+# ---------------------------------------------------------------------------
+
+[tasks.daemon]
+description = "Build dev binary and start the Python sidecar (required for memory tests)"
+depends = ["dev"]
+run = "/tmp/context0-dev --daemon"
+
+[tasks."codemap:index"]
+description = "Build dev binary and index the codebase (required for cmd/codemap tests)"
+depends = ["dev"]
+run = "/tmp/context0-dev codemap index"
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+[tasks."test:sidecar"]
+description = "Run Python sidecar unit tests (no model or sidecar required)"
+run = "uv run --group dev pytest tests/sidecar/ -v"
+
+[tasks.test]
+description = "Run full test suite (requires: daemon running, codemap index built)"
+run = """
+uv run --group dev pytest sidecar/tests/ -v
+go test ./... -timeout 120s
+"""
+
+[tasks."test:fast"]
+description = "Run packages that need no external setup (no sidecar, no index)"
+run = """
+go test \
+  ./internal/agenda/... \
+  ./internal/archive/... \
+  ./internal/codemapserver/... \
+  ./internal/daemon/... \
+  ./internal/db/... \
+  ./internal/graph/... \
+  ./internal/lsp/... \
+  ./internal/scanner/... \
+  ./cmd/agenda/... \
+  ./cmd/recover/... \
+  -timeout 60s
+"""
+
+[tasks."test:memory"]
+description = "Run memory tests (requires daemon)"
+run = "go test ./internal/memory/... ./cmd/memory/... -v -timeout 60s"
+
+[tasks."test:codemap"]
+description = "Run codemap tests (requires codemap index)"
+run = "go test ./cmd/codemap/... -v -timeout 120s"

@@ -11,37 +11,31 @@ import (
 	"github.com/spf13/cobra"
 
 	cmdcodemap "context0/cmd/codemap"
-	"context0/internal/archive"
 	"context0/internal/db"
 	"context0/internal/graph"
 )
 
 // ── package-level shared state ────────────────────────────────────────────────
 
-// sharedHome is set once by TestMain to a temp directory that acts as $HOME
-// for all tests that share the pre-built index.
-var sharedHome string
-
-// sharedProjectDir is the real project root, set once by TestMain.
+// sharedProjectDir is the real project root (two dirs up from cmd/codemap),
+// set once by TestMain. AfterIndex tests use the real $HOME so they query the
+// actual index without any snapshot/restore overhead.
 var sharedProjectDir string
 
-// TestMain locates the pre-built codemap index in the developer's real HOME,
-// snapshots it into a temporary archive, then restores it into an isolated
-// temp HOME so all "AfterIndex" tests can share a fast, clean copy without
-// re-running the expensive index step.
+// TestMain verifies that the pre-built codemap index exists, then runs the
+// tests. AfterIndex tests share the real $HOME and real index; they are fast
+// and test against meaningful production data.
 //
 // Before running the tests for the first time, build and index once:
 //
 //	go build -o /tmp/context0 . && /tmp/context0 codemap index
 func TestMain(m *testing.M) {
-	// Resolve the real project root (two dirs up from cmd/codemap).
 	root, err := filepath.Abs("../../")
 	if err != nil {
 		panic("projectRoot: " + err.Error())
 	}
 	sharedProjectDir = root
 
-	// Locate the pre-built index in the developer's real HOME.
 	realDataDir, err := db.ProjectDir(root)
 	if err != nil {
 		panic("db.ProjectDir: " + err.Error())
@@ -55,73 +49,10 @@ func TestMain(m *testing.M) {
 		)
 	}
 
-	// Snapshot the pre-built index into a temp archive.
-	snapFile, err := os.CreateTemp("", "ctx0-test-snap-*.tar.gz")
-	if err != nil {
-		panic("CreateTemp: " + err.Error())
-	}
-	snapshotPath := snapFile.Name()
-	snapFile.Close()
-	defer os.Remove(snapshotPath)
-
-	if err := archive.Write(snapshotPath, []string{prebuiltDB}); err != nil {
-		panic("archive snapshot: " + err.Error())
-	}
-
-	// Create a shared temp HOME and restore the snapshot into it.
-	tmpHome, err := os.MkdirTemp("", "ctx0-test-home-*")
-	if err != nil {
-		panic("MkdirTemp: " + err.Error())
-	}
-	sharedHome = tmpHome
-	defer os.RemoveAll(tmpHome)
-
-	// Resolve the shared data dir by temporarily pointing HOME at tmpHome so
-	// that db.ProjectDir constructs the path (and creates the directory) there.
-	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpHome)
-	sharedDataDir, err := db.ProjectDir(root)
-	if err != nil {
-		panic("db.ProjectDir (shared home): " + err.Error())
-	}
-	os.Setenv("HOME", origHome)
-
-	if _, err := archive.Extract(sharedDataDir, snapshotPath); err != nil {
-		panic("archive restore: " + err.Error())
-	}
-
 	os.Exit(m.Run())
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
-
-// runWithHome executes the codemap command tree with a specific HOME value.
-func runWithHome(home, dir string, args ...string) (string, error) {
-	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", home)
-	defer os.Setenv("HOME", origHome)
-
-	origStdout := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		panic("os.Pipe: " + err.Error())
-	}
-	os.Stdout = w
-
-	root := &cobra.Command{Use: "context0"}
-	root.PersistentFlags().String("project", dir, "project dir")
-	projectDir := dir
-	root.AddCommand(cmdcodemap.NewCmd(&projectDir))
-	root.SetArgs(append([]string{"codemap"}, args...))
-	execErr := root.Execute()
-
-	w.Close()
-	os.Stdout = origStdout
-
-	out, _ := io.ReadAll(r)
-	r.Close()
-	return string(out), execErr
-}
 
 // run executes the codemap command tree with the given args and returns stdout.
 // Because the commands write directly to os.Stdout, we redirect it via a pipe.
@@ -160,11 +91,11 @@ func mustRun(t *testing.T, dir string, args ...string) string {
 	return out
 }
 
-// mustRunShared runs a command against the shared pre-indexed project (using
-// sharedHome so the DB is found).
+// mustRunShared runs a command against the shared pre-indexed project using
+// the real $HOME, so the real index is found without any snapshot/restore.
 func mustRunShared(t *testing.T, args ...string) string {
 	t.Helper()
-	out, err := runWithHome(sharedHome, sharedProjectDir, args...)
+	out, err := run(t, sharedProjectDir, args...)
 	if err != nil {
 		t.Fatalf("codemap %v: %v\noutput: %s", args, err, out)
 	}
@@ -182,12 +113,24 @@ func projectRoot(t *testing.T) string {
 	return root
 }
 
-// setupGoProject redirects HOME to an isolated temp dir (so that the DB is
-// written there instead of the real ~/.context0) and returns the real project
-// root as the source directory.
+// setupGoProject redirects HOME to an isolated temp dir so writes land there
+// instead of the real ~/.context0. Uses os.MkdirTemp + best-effort cleanup to
+// avoid t.TempDir()'s behaviour of failing the test when macOS creates a
+// ~/Library directory under the temp HOME that cannot be removed.
 func setupGoProject(t *testing.T) string {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
+	tmpHome, err := os.MkdirTemp("", "ctx0-test-*")
+	if err != nil {
+		t.Fatalf("MkdirTemp: %v", err)
+	}
+	origHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", tmpHome); err != nil {
+		t.Fatalf("Setenv HOME: %v", err)
+	}
+	t.Cleanup(func() {
+		os.Setenv("HOME", origHome) //nolint:errcheck
+		os.RemoveAll(tmpHome)       // best-effort; macOS Library remnants are harmless
+	})
 	return projectRoot(t)
 }
 

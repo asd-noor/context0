@@ -19,7 +19,7 @@ The sidecar is a local Python process that provides embedding and LLM inference.
 context0 --daemon
 ```
 
-Spawns the Python sidecar as a detached background process via `uv run sidecar/main.py`. On first run it downloads and caches the embedding model (`BAAI/bge-small-en-v1.5`) and inference model (`mlx-community/Qwen2.5-Coder-3B-Instruct-4bit`) under `~/.context0/models/`. Subsequent starts use the local cache and are fast.
+Spawns the Python sidecar as a detached background process via `uv run sidecar/main.py`. On first run it downloads and caches the embedding model (`mlx-community/bge-small-en-v1.5-4bit`) and inference model (`mlx-community/Qwen2.5-Coder-3B-Instruct-4bit`) under `~/.context0/models/`. Subsequent starts use the local cache and are fast.
 
 Idempotent -- safe to call when already running.
 
@@ -359,7 +359,7 @@ Reports node/edge counts. Example: `nodes=215  edges=417`
 ### List symbols in a file
 
 ```
-context0 codemap symbols <file> [--json]
+context0 codemap outline <file> [--json]
 ```
 
 Lists all symbols (functions, methods, types, classes, interfaces) in a file.
@@ -367,15 +367,16 @@ Lists all symbols (functions, methods, types, classes, interfaces) in a file.
 ### Look up a symbol
 
 ```
-context0 codemap symbol <name> [--source] [--json]
+context0 codemap find <name> [--source] [--json] [--lang <lang>]
 ```
 
 - Default: compact definition with file path and line numbers
 - `--source`: includes the full source code in a fenced code block with language tag
+- `--lang`: filter results by language (e.g. `go`, `python`, `typescript`)
 
 Example:
 ```
-context0 codemap symbol SaveMemory --source
+context0 codemap find SaveMemory --source
 ```
 
 ### Analyze change impact
@@ -401,6 +402,19 @@ context0 codemap index
 ```
 
 Only use this if the daemon cannot be started or the index is corrupt. The daemon handles indexing automatically under normal operation.
+
+### Discover (natural-language search)
+
+```
+context0 codemap discover <query>
+```
+
+Natural-language codebase search for languages not indexed by the codemap engine, or for ad-hoc structural queries. Generates a targeted `fd`/`rg` script via the local inference model and executes it with the Ralph-loop for automatic self-correction. **Requires the sidecar to be running.**
+
+Example:
+```
+context0 codemap discover "Find all files that import sqlite3"
+```
 
 ### Supported languages
 

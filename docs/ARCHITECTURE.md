@@ -26,7 +26,7 @@ All databases are stored under `~/.context0/<project-path>/` where the project p
 | AST parsing | Tree-sitter via `tree-sitter/go-tree-sitter` (CGo, official bindings) |
 | LSP integration | JSON-RPC 2.0 over stdio (custom client) |
 | File watching | fsnotify |
-| Embedding inference | Python sidecar (MLX, `BAAI/bge-small-en-v1.5`, 384 dimensions) |
+| Embedding inference | Python sidecar (MLX, `mlx-community/bge-small-en-v1.5-4bit`, 384 dimensions) |
 | LLM inference | Python sidecar (MLX, `mlx-community/Qwen2.5-Coder-3B-Instruct-4bit`) |
 | Sidecar runtime | Python ≥ 3.11, uv, mlx / mlx-lm / mlx-embeddings, huggingface-hub |
 
@@ -96,7 +96,15 @@ context0/
 │   ├── downloader.py           # Hugging Face Hub model cache manager
 │   ├── prompts.py              # Prompt templates (ask, exec repair + triage, discover)
 │   └── protocol.py             # Command name constants
+├── tests/
+│   └── sidecar/                # Python unit tests (no model or sidecar required)
+│       ├── test_ask.py         # _plan and ask orchestration
+│       ├── test_context7.py    # _jsonrpc, _unwrap, _extract_sse_data, _extract_library_id
+│       ├── test_ralph.py       # _strip_fences, ralph_exec, _fetch_repair_docs
+│       └── test_server.py      # SidecarServer._dispatch (ping, embed, context7, unknown)
 ```
+
+The `tests/` directory is intentionally outside `sidecar/` so the `//go:embed all:sidecar` directive in `main.go` does not bundle test files into the binary.
 
 ---
 
@@ -111,7 +119,7 @@ The sidecar is an always-on background process that provides two services the Go
 
 ```
 1. Write PID  → ~/.context0/sidecar.pid
-2. Load embed model  (BAAI/bge-small-en-v1.5, cached in ~/.context0/models/)
+2. Load embed model  (mlx-community/bge-small-en-v1.5-4bit, cached in ~/.context0/models/)
 3. Load infer model  (mlx-community/Qwen2.5-Coder-3B-Instruct-4bit, cached)
 4. Bind Unix socket  → ~/.context0/channel.sock
 5. Serve until SIGTERM / SIGINT
@@ -189,7 +197,7 @@ The sidecar plans which `memory`, `codemap`, and `agenda` subcommands to call, e
 |---|---|---|
 | Socket | `CTX0_SOCKET` | `~/.context0/channel.sock` |
 | PID file | `CTX0_SIDECAR_PID` | `~/.context0/sidecar.pid` |
-| Embedding model | `CTX0_EMBED_MODEL` | `BAAI/bge-small-en-v1.5` |
+| Embedding model | `CTX0_EMBED_MODEL` | `mlx-community/bge-small-en-v1.5-4bit` |
 | Inference model | `CTX0_INFER_MODEL` | `mlx-community/Qwen2.5-Coder-3B-Instruct-4bit` |
 | Context7 API key | `CONTEXT7_API_KEY` | *(none — unauthenticated, low rate limits)* |
 

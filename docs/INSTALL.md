@@ -2,115 +2,94 @@
 
 ## Prerequisites
 
-- **Go 1.26+** -- Context0 is written in Go and requires CGo for SQLite and Tree-sitter bindings.
-- **C compiler** -- CGo requires a working C toolchain (`gcc` or `clang`). On macOS this is provided by Xcode Command Line Tools; on Linux, install `build-essential` or equivalent.
-- **Ollama** -- Required for the Memory engine's embedding generation. The Agenda and CodeMap engines do not need it.
+- **Go 1.26+** — context0 is written in Go and requires CGo for SQLite and Tree-sitter bindings.
+- **C compiler** — CGo requires a working C toolchain (`gcc` or `clang`). On macOS this is provided by Xcode Command Line Tools; on Linux, install `build-essential` or equivalent.
+- **Python 3.11+** and **[uv](https://docs.astral.sh/uv/)** — required for the Python sidecar (memory, ask, exec). Install uv with `curl -LsSf https://astral.sh/uv/install.sh | sh`.
 
 ## Build from source
 
-```
+```sh
 CGO_ENABLED=1 go build -tags fts5 -o context0 .
 ```
 
-Both `CGO_ENABLED=1` and `-tags fts5` are required:
-- `CGO_ENABLED=1` -- Enables the C bindings for SQLite, sqlite-vec, and Tree-sitter.
-- `-tags fts5` -- Enables SQLite FTS5 full-text search support at compile time. Without it, Memory and Agenda engines will fail with `no such module: fts5`.
+Both flags are required:
+- `CGO_ENABLED=1` — enables C bindings for SQLite, sqlite-vec, and Tree-sitter.
+- `-tags fts5` — enables SQLite FTS5 full-text search. Without it, Memory and Agenda will fail with `no such module: fts5`.
 
 ### Using mise
 
-If you use [mise](https://mise.jdx.dev/) for tool management, the project includes a build task:
-
-```
-mise run build
-```
-
-This runs the same command as above. The `mise.toml` also pins the Go version to 1.26.1.
-
-### Verify the build
-
-```
-./context0 --help
+```sh
+mise run build    # versioned binary in ./context0
+mise run install  # build + install to ~/.local/bin (or $INSTALL_DIR)
 ```
 
-You should see the three subcommands: `memory`, `agenda`, `codemap`.
+### Verify
 
-## Setting up Ollama
-
-The Memory engine requires an embedding model served by Ollama (or any OpenAI-compatible endpoint).
-
-### Install Ollama
-
-```
-# macOS
-brew install ollama
-
-# Linux
-curl -fsSL https://ollama.com/install.sh | sh
+```sh
+context0 --version
 ```
 
-### Start the server
+## Python sidecar
 
-```
-ollama serve
-```
+The sidecar provides embedding and LLM inference for the Memory engine and the `ask`/`exec` commands. It is managed entirely by context0.
 
-By default, Ollama listens on `http://localhost:11434`.
+### Start
 
-### Pull the embedding model
-
-```
-ollama pull qllama/bge-small-en-v1.5
+```sh
+context0 --daemon
 ```
 
-This is the default 384-dimensional embedding model. It will be pulled automatically on first `memory save` if not already present.
+On first run, uv installs Python dependencies into `.venv/` and downloads the models into `~/.context0/models/`:
 
-### Custom embedding endpoint
+| Model | Default |
+|---|---|
+| Embedding | `mlx-community/bge-small-en-v1.5-4bit` (384 dims) |
+| Inference | `mlx-community/Qwen2.5-Coder-3B-Instruct-4bit` |
 
-Override the defaults via environment variables:
+Subsequent starts use the local cache and are fast.
+
+### Stop
+
+```sh
+context0 --kill-daemon
+```
+
+### Override defaults
 
 | Variable | Default | Description |
 |---|---|---|
-| `CTX0_EMBED_ENDPOINT` | `http://localhost:11434` | Ollama or LM Studio base URL |
-| `CTX0_EMBED_MODEL` | `qllama/bge-small-en-v1.5` | Embedding model name |
-
-Any OpenAI-compatible `/v1/embeddings` endpoint will work (e.g. LM Studio, vLLM, text-embeddings-inference).
+| `CTX0_SOCKET` | `~/.context0/channel.sock` | Unix socket path |
+| `CTX0_SIDECAR_PID` | `~/.context0/sidecar.pid` | PID file path |
+| `CTX0_EMBED_MODEL` | `mlx-community/bge-small-en-v1.5-4bit` | Embedding model |
+| `CTX0_INFER_MODEL` | `mlx-community/Qwen2.5-Coder-3B-Instruct-4bit` | Inference model |
+| `CONTEXT7_API_KEY` | *(none)* | Context7 API key for higher rate limits (free at context7.com/dashboard) |
 
 ## LSP servers (Code Exploration)
 
-The CodeMap engine uses language servers for cross-reference enrichment. These are resolved automatically in order:
+The codemap engine uses language servers for cross-reference enrichment. They are resolved automatically in order: **system PATH** → **cache** (`~/.context0/bin/`) → **auto-download**. You do not need to install them manually.
 
-1. **System PATH** -- If the binary is already installed on your system, it is used directly.
-2. **Cache** (`~/.context0/bin/`) -- Previously downloaded binaries are reused.
-3. **Auto-download** -- If not found, the binary is downloaded from its upstream source (GitHub releases, npm, pip, or Go module proxy).
+| Language | Server |
+|---|---|
+| Go | `gopls` |
+| Python | `pyright-langserver` |
+| TypeScript / JavaScript | `typescript-language-server` |
+| Lua | `lua-language-server` |
+| Zig | `zls` |
 
-Supported language servers:
-
-| Language | Server | Install manually (optional) |
-|---|---|---|
-| Go | `gopls` | `go install golang.org/x/tools/gopls@latest` |
-| Python | `pylsp` | `pip install python-lsp-server` |
-| TypeScript/JavaScript | `typescript-language-server` | `npm i -g typescript-language-server typescript` |
-| Lua | `lua-language-server` | GitHub releases |
-| Zig | `zls` | GitHub releases |
-
-You do not need to install these manually -- Context0 will download them if needed. A background goroutine checks for newer versions and silently upgrades cached binaries.
+A background goroutine checks for newer versions and silently upgrades cached binaries.
 
 ## Data directory
 
-All per-project data is stored under:
+All per-project data is stored under `~/.context0/<transformed-project-path>/`, where path separators are replaced with `=`:
 
 ```
-~/.context0/<transformed-project-path>/
+/home/user/myproject  →  ~/.context0/home=user=myproject/
 ```
 
-The project path is transformed by replacing path separators with `=`:
+Files per project:
 
-```
-/home/user/myproject  -->  ~/.context0/home=user=myproject/
-```
-
-Files stored per project:
-- `memory.sqlite` -- Memory engine database
-- `agenda.sqlite` -- Agenda engine database
-- `codemap.sqlite` -- Code graph database
-- `codemap.pid` -- Watcher daemon PID file (temporary)
+| File | Engine |
+|---|---|
+| `memory-ctx0.sqlite` | Memory |
+| `agenda-ctx0.sqlite` | Agenda |
+| `codemap-ctx0.sqlite` | Code Exploration |
